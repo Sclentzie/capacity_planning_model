@@ -1,0 +1,32 @@
+# =====================================================================
+# AI and automation, 50% realized (spec Section 7, 7.1)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The same programme with half the planned effect showing up, which is
+# the more honest planning case: realization is the one input that
+# captures everything between a plan on paper and a Tuesday in March.
+#
+# One field does it (7.1: realization applies to both sides). It scales
+# the rates and the escalation and extra uplifts; the MIX uplifts need no
+# scaling because they are calculated from the share actually removed, so
+# they follow realization down on their own (decided 10/27, 10/28).
+#
+# So the deflected share halves from 8% to 4%, workload falls 2% instead
+# of 4%, and break-even escalation tightens from 4.17% to 2.04%. Half the
+# benefit, and half the room for escalation before it stops paying.
+# =====================================================================
+scenario:
+  name: "AI and automation, 50%"
+  starts_week: 13
+  what_it_changes: "The 7.1 defaults with realization at 50%"
+
+overrides:
+  scenario:
+    deflection:
+      enabled: true
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10
+      realization: 0.50

@@ -1,0 +1,70 @@
+# =====================================================================
+# AI targeted (spec Section 7, added 10/28, re-picked 10/28)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Do only what pays. The full AI run switches a machine on across all 19
+# eligible work types and 75.7% of what it spends is SETUP - $7,692 a work
+# type a year, whether that row automates nine thousand items or a
+# hundred and ten.
+#
+# THE LIST IS NOW TWO ROWS, down from six. The easy-item decision (10/28,
+# spec 6.6) is what cut it: the items a machine takes are the simple ones,
+# so the saving is what a SIMPLE item would have cost by hand, not what an
+# average one would. On W1 intake that is $1.94 rather than $3.89 - and
+# $1.94 does not cover the fee, the exception labour, the QA sample and a
+# share of a $10,000 setup.
+#
+# What survives, read off the Next Dollar ranking in the AI 100% run as
+# the rows whose volume-weighted saving after fixed costs is positive
+# (figures re-measured 11/03; the ones first written here on 10/28 no
+# longer reproduce, though the LIST is unchanged):
+#
+#   W8  digital retrieval        +$1.58 an item   156,532 items a year
+#   W5  authorization validation +$0.378 an item  107,119 items a year
+#
+# Both survive on VOLUME. They are the two highest-volume eligible rows
+# with a handle time worth automating, so the setup spreads thin enough to
+# leave something over. That is the whole finding: at a $10,000 setup per
+# work type, automation is a volume play, not a handle-time play.
+#
+# What dropped out, and why it is not close except once:
+#
+#   W14 quality review   -$0.069 an item - the near miss, 122,444 items
+#   W1  request intake   -$0.461
+#   W12 digitization     -$3.199         - only 20,219 items to spread on
+#   W7  legal/sensitive  -$5.607         - 100% human sign-off eats it
+#
+# W14 misses by seven cents on the second-highest volume in the network,
+# so it is the row to revisit if the setup fee moves at all.
+#
+# AND THE LIST HAS A VOLUME ATTACHED TO IT (found 11/03, in Combined).
+# Setup is FIXED while the saving SCALES with items, so a fee spread over
+# 15% more items is 13% less per item and every row gains about twenty
+# cents. At +15% W14 crosses over to +$0.111 and would be on a list
+# re-picked at that volume. Decided 11/03: Combined keeps W5 and W8 - and
+# the reason is not that the ranking was wrong but that re-picking buys
+# nothing. Adding W14 frees 0.23 FTE of QA time that sits INSIDE the QA
+# team's existing paid hours, so it saves $0 of labour and adds a $7,692
+# setup. A per-item saving is only money if the hour it frees is on the
+# margin.
+#
+# DEFLECTION IS OFF, to keep this run about one question: whether
+# automating only the rows that pay is worth doing on its own. Since the
+# 10/28 uplift split, deflection SAVES hours at zero escalation and only
+# costs them above a 4.17% escalation, so it is a separate - and much
+# cheaper - decision.
+#
+# Same rates otherwise, with the extra uplift at its 7.1 default of zero.
+# =====================================================================
+scenario:
+  name: "AI targeted"
+  starts_week: 13
+  what_it_changes: "Automation only on the two work types that pay back after fixed costs; deflection off"
+
+overrides:
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10
+      only_work_types: [W5, W8]

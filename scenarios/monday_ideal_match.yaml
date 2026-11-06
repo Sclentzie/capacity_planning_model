@@ -1,0 +1,23 @@
+# =====================================================================
+# Monday scheduling, ideal match (spec Section 7, added 10/27)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The UPPER BOUND, not a roster. Each site's Onsite Associate hours follow
+# the day-of-week pattern exactly - Monday 23%, Friday 17% - on the same
+# weekly paid hours. No rota can deliver it, because matching the pattern
+# needs fractional people on every day of the week.
+#
+# It is here to answer one question the part-time run cannot: how much of
+# the counter's 420 uncovered hours a year is schedulable AT ALL, and how
+# much is a genuine shortage of people. Everything the ideal match does
+# not fix is not a scheduling problem.
+# =====================================================================
+scenario:
+  name: "Monday ideal match"
+  starts_week: 1
+  what_it_changes: "Onsite Associate daily hours follow the day-of-week pattern exactly"
+
+overrides:
+  scenario:
+    onsite_schedule:
+      shape: ideal_match

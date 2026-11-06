@@ -1,0 +1,59 @@
+# =====================================================================
+# Coordinated digitization (spec Section 7, decided 10/28,
+# recalibrated 11/02)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The only lever in Section 7 that changes how much work ARRIVES rather
+# than how it is handled - and the only one whose benefit is permanent.
+#
+# The baseline already converts records, reactively: every onsite
+# retrieval (W11) drags a 15-minute digitization item (W12) behind it,
+# about 21,000 of them a year. But that conversion never feeds back into
+# the media mix. The non-digital share is a flat 11% in week 1 and a flat
+# 11% in week 52. The work is done and the benefit is thrown away.
+#
+# This run does it deliberately and banks the result:
+#
+#   40 added paid hours a week, at the Records Specialist rate, from
+#     plan week 13. ADDED, not borrowed - borrowing them would make the
+#     project look free while starving the retrieval queue, which is how
+#     this kind of project usually fails in practice.
+#
+#   4 items an hour, which is W12's own 15 minutes. The project is not
+#     assumed to be faster at the job than the people already doing it.
+#
+#   160 charts a week, most-likely-requested first, among the charts not
+#     yet requested - a chart the operation has already pulled is already
+#     digital and cannot be converted again.
+#
+# WHAT THE RECALIBRATION DID TO THIS RUN
+#
+# The archive and the request concentration used to be illustrative
+# (250,000 charts, 20% of it drawing 80% of requests) and they
+# contradicted the history: that archive would have been a quarter
+# converted by reactive digitization alone over the 156 history weeks,
+# dragging the paper share from 11.00% to 5.59% where the history is flat
+# at 11.00%. Calibrated against that flat history the archive is
+# 2,000,000 charts at 20/45 (see assumptions.yaml for the solve), and
+# the scenario's benefit falls by a factor of 14.
+#
+# It is the same mechanism reporting an honest number. The reason the
+# early figure was so much better is that an archive small enough for
+# 160 charts a week to matter is also an archive the operation would
+# already have digitized by accident.
+#
+# Each converted record moves from an onsite medium to digital, so three
+# things change and the report counts all three: the W11 retrieval is
+# saved (25, 35 or 45 minutes), the W12 that followed it is saved (15),
+# and a W8 digital retrieval is ADDED (10), because the chart still has
+# to be fetched.
+# =====================================================================
+scenario:
+  name: "Coordinated digitization"
+  starts_week: 13
+  what_it_changes: "40 added paid hours a week convert records ahead of demand, most-likely-requested first"
+
+overrides:
+  scenario:
+    digitization:
+      enabled: true

@@ -1,0 +1,43 @@
+# =====================================================================
+# Combined, AI 100% - the full-program comparison (spec Section 7, 11/02)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Volume +15% from week 1 plus the WHOLE automation program from week 13:
+# all 19 eligible work types at the 7.1 default rates, with deflection
+# on - exactly the "AI and automation" row, not the targeted two.
+#
+# Kept because the comparison is the point (Siri 11/02). "AI 100%" is
+# what a growth scenario gets paired with by default when nobody has
+# asked which rows pay, and the gap between this run and `combined.yaml`
+# is the price of not asking:
+#
+#   SETUP DOMINATES. $10,000 a work type spread over a year is $7,692,
+#     charged whether the row automates two thousand items a week or a
+#     hundred and ten. Nineteen rows buy nineteen setups.
+#   HUMAN-IN-THE-LOOP SCALES WITH ITEMS, not with savings. Every
+#     automated item on a thin row still returns its exceptions, its QA
+#     sample and - on W7 and the R8 paths - a 100% legal sign-off.
+#
+# So this run should automate far more items than the targeted one and
+# cost more doing it. If it does, the finding is not "automation is bad"
+# but "a program is a portfolio, and the rows have to be picked".
+#
+# Deflection is ON here, matching the "AI and automation" row, which is
+# the other difference from the targeted run and is called out so the two
+# are not read as differing only in breadth.
+# =====================================================================
+scenario:
+  name: "Combined, AI 100%"
+  starts_week: 1
+  what_it_changes: "Requests x 1.15 from week 1, plus the full automation program and deflection from week 13"
+
+overrides:
+  scenario:
+    demand_multiplier: 1.15
+    deflection:
+      enabled: true
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10

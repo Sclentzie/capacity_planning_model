@@ -1,0 +1,29 @@
+# =====================================================================
+# Wider lunch window (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Session 3 found the lunch window driving the daily staffing peak on
+# about half of all site-days. The reason is arithmetic: one 30-minute
+# unpaid lunch spread across a 3-hour window puts 16.7% of the team away
+# on average, and the relief has to fit somewhere inside those six
+# half-hours - on top of a midday that is BUSY, because requesters chase
+# records on their own lunch break.
+#
+# Widening the window to three and a half hours gives the rota one more
+# half-hour to hide the hole in: 30/210 = 14.3% away on average instead
+# of 16.7%. Nobody takes a longer lunch and nobody takes fewer; the same
+# relief is simply spread thinner.
+#
+# This costs nothing in pay - lunch is unpaid - so anything it saves is
+# free, which is exactly why it is worth checking before hiring.
+# =====================================================================
+scenario:
+  name: "Wider lunch window"
+  starts_week: 1
+  what_it_changes: "Lunch window 11:00 to 14:30 instead of 11:00 to 14:00"
+
+overrides:
+  breaks_and_lunch:
+    reliefs:
+      - code: lunch
+        window: {from: "11:00", to: "14:30"}

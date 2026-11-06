@@ -1,0 +1,32 @@
+# =====================================================================
+# Monday scheduling, part-time (spec Section 7, added 10/27)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The realistic version of the same idea, and the one a site manager could
+# actually put on a rota. A tenth of each site's Onsite Associate paid
+# hours moves off the full-time roster - cut evenly across all five days,
+# because a post cut to nine tenths is cut on every day of the week - and
+# comes back as part-timers working Monday and Tuesday.
+#
+# The 75/25 split is derived, not stated: Monday sits 3 points above an
+# even 20% of the week and Tuesday 1 point, so the part-time hours follow
+# 3:1. If the day-of-week pattern is ever revised the split follows it.
+#
+# Same weekly paid hours, same hourly cost, same shrinkage. Sites are open
+# 8:00 to 17:00, so nobody works a longer Monday - the hours move through
+# who is scheduled.
+# =====================================================================
+scenario:
+  name: "Monday part-time"
+  starts_week: 1
+  what_it_changes: "2% of Onsite Associate paid hours move to Monday/Tuesday part-timers"
+
+overrides:
+  scenario:
+    onsite_schedule:
+      shape: part_time
+      # Decided 10/27 after the 0-to-10% sweep: 2% is the only part of the
+      # curve that pays for itself. It is also the lowest step that does -
+      # 1% saves less and 3% starts giving it back - so it is where a site
+      # manager should start rather than a compromise between extremes.
+      part_time_share: 0.02

@@ -1,0 +1,14 @@
+# =====================================================================
+# Baseline (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The baseline changes nothing. It exists as a file so the roster in
+# scenarios/ is the whole spec 7 table and the runner can read every
+# scenario the same way, including the one that is just assumptions.yaml.
+# =====================================================================
+scenario:
+  name: "Baseline"
+  starts_week: 1
+  what_it_changes: "Nothing; phones answered per site; 2 Records Specialists at every site"
+
+overrides: {}

@@ -1,0 +1,94 @@
+# =====================================================================
+# Combined (spec Section 7, decided 11/02)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Volume +15% from week 1, AI TARGETED from week 13. The question a
+# leader actually asks: next year brings 15% more requests - can the
+# automation we can justify absorb it, or do we still have to hire?
+#
+# TWO DATES, ONE SCENARIO, AND WHY THEY DO NOT COLLIDE
+#
+# The demand multiplier lands from the scenario's starts week, and the
+# machine goes live on its own date in the automation block. So week 1 is
+# the volume and week 13 is the machine, and the twelve weeks between
+# them are the honest part of the run: demand arrives before the relief
+# does, and that is the window the backlog and the hiring trigger see.
+# Dating both from week 13 would have quietly removed the hardest quarter.
+#
+# WHY TARGETED AND NOT THE FULL PROGRAM
+#
+# Siri 11/02: Combined builds on AI targeted. The full program spends
+# 75.7% of its money on setup - $7,692 a work type a year whether the row
+# does two thousand items a week or a hundred - so pairing a growth
+# scenario with a program that loses money would measure two things at
+# once and credit the loss to the growth. `combined_ai_100.yaml` keeps
+# the full-program version alongside for comparison.
+#
+# WHAT TO EXPECT, AND WHY THE TWO EFFECTS ARE NOT COMMENSURATE
+#
+# The volume lands on everything. The automation lands on two work types
+# at a single-digit share of their eligible items, and gives part of that
+# back as exceptions, QA sample and sign-off (spec 5.5). So these are not
+# a +15% and a -8% that meet in the middle: one is the whole network and
+# the other is a slice of two rows. The run reports how large a share of
+# the rise the targeted machine actually absorbs rather than assuming it
+# is the share it automates.
+#
+# FOUND 11/03. It absorbs 0.74 of the 15.43 extra FTE, about 5%, and
+# all-in it costs $34,677 MORE than letting the volume land: $9,788 of
+# labour saved against a $44,465 invoice. Three reasons, and the third is
+# the one worth carrying:
+#
+#   TWO ROWS ARE NOT THE NETWORK. 8% of eligible items on W5 and W8,
+#     part of it returned as human-in-the-loop work.
+#   IT ARRIVES AFTER THE PEAK. The worst week is plan week 10 at 7.258
+#     FTE short; the machine goes live in week 13. A lever that arrives
+#     after the peak cannot cut the peak, so all four runs hire the same
+#     23 people and report the same peak gap.
+#   THE SAVING HAS NOTHING TO LAND ON. The same machine DOES pay at
+#     baseline volume - $57,360 of labour against $43,280, $14,080 to the
+#     good - because there it cancels two hiring classes (8 hires down to
+#     6). At +15% the plan is already hiring 23 and 0.74 FTE cancels none
+#     of them, so the saving collapses to overtime.
+#
+# THE W14 FINDING, and why this file still says W5, W8.
+#
+# The targeted list is not a property of the work types. It is a ranking
+# at a volume. Setup is FIXED at $7,692 a row a year while the saving
+# SCALES with items, so a fee spread over 15% more items is 13% less per
+# item and every row's after-fixed saving gains about twenty cents:
+#
+#   W14 quality review   -$0.069 an item at baseline volume
+#                        +$0.111 an item at +15%
+#
+# On the second-highest item count in the network (140,704 a year at
+# +15%), so a list re-picked at this volume would read W5, W8, W14.
+#
+# Decided 11/03: Combined keeps W5 and W8 - and NOT because the ranking
+# is wrong. Running the re-picked version measures what it would buy:
+# another 0.23 FTE of requirement removed, and EXACTLY ZERO extra labour
+# cost, because the hours it frees sit inside the QA team's existing paid
+# hours. Nobody is released and no overtime hour is avoided, so there is
+# no cash behind the hours - and it adds a $7,692 setup, which makes it
+# worse all-in than not doing it.
+#
+# A PER-ITEM SAVING IS ONLY MONEY IF THE HOUR IT FREES IS ON THE MARGIN.
+# The Next Dollar ranking prices a human hour at its loaded rate, which
+# quietly assumes that hour can be let go; on a held roster it cannot.
+# That is a limit of the ranking, not of this scenario, and it is the
+# most useful thing the combination turned up.
+# =====================================================================
+scenario:
+  name: "Combined"
+  starts_week: 1
+  what_it_changes: "Requests x 1.15 from week 1, plus AI targeted from week 13"
+
+overrides:
+  scenario:
+    demand_multiplier: 1.15
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10
+      only_work_types: [W5, W8]

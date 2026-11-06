@@ -1,0 +1,55 @@
+# =====================================================================
+# After proof of concept (spec Section 7, added 11/02)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Built on AI TARGETED (Siri 11/02), not on the full AI run, because the
+# full run does not pay: this scenario asks what PROVING a machine is
+# worth on top of installing one that already earns its keep.
+#
+# WHAT A PROOF OF CONCEPT CAN AND CANNOT BUY
+#
+# Automation sends three things back to people (spec 5.5), and only one
+# of them is about trust:
+#
+#   EXCEPTIONS      a property of the WORK. Hard items stay hard.
+#   LEGAL SIGN-OFF  a property of the LAW. Where a statute says a person
+#                   must decide, a measured error rate is evidence about
+#                   the machine and says nothing about the statute. It
+#                   stays at 100% here, and the only input that moves it
+#                   is one saying the requirement itself changed.
+#   THE QA SAMPLE   a property of TRUST, and trust is earnable. High at
+#                   go-live because nobody knows how good the machine is
+#                   yet; sampling is how you find out.
+#
+# So the whole scenario is the third line. That is a small saving honestly
+# stated rather than a large one assumed.
+#
+# THE GATE IS MEASURED, NOT ASSUMED
+#
+# The spec table says week 27, and this file does not hard-code it. The
+# machine's TRUE error rate is an input (0.3%) that nobody ever observes;
+# what the operation sees is the rate in the sample it reviewed, which is
+# a binomial draw on that week's sample. One error in a thin week reads
+# far above a 0.5% target and resets a 12-week clock, so the gate week is
+# an OUTPUT of the run. If it lands later than 27 - or never - that is the
+# finding, and assuming week 27 would have hidden it.
+#
+# `starts_week` below is the spec table's label for when the effect is
+# expected. Nothing in the run depends on it: automation goes live in week
+# 13 with AI targeted, and the gate decides the rest.
+# =====================================================================
+scenario:
+  name: "After proof of concept"
+  starts_week: 27
+  what_it_changes: "AI targeted, plus a measured error-rate gate that halves QA sample rates once it clears; legal sign-offs unchanged"
+
+overrides:
+  scenario:
+    proof_of_concept:
+      enabled: true
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10
+      only_work_types: [W5, W8]

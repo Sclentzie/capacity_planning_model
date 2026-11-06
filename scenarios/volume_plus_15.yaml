@@ -1,0 +1,21 @@
+# =====================================================================
+# Volume +15% (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The simplest question a leader asks, and the one that shows whether the
+# model is any use: if next year brings 15% more requests, what breaks
+# first and what does it cost?
+#
+# The multiplier lands on the PLAN forecast only. The 156 weeks of history
+# are untouched, because the forecast is fitted to what actually happened -
+# inflating the history would change the trend and the seasonal index, and
+# the scenario would then be answering a different question.
+# =====================================================================
+scenario:
+  name: "Volume +15%"
+  starts_week: 1
+  what_it_changes: "Requests x 1.15, all sites"
+
+overrides:
+  scenario:
+    demand_multiplier: 1.15

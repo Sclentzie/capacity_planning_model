@@ -1,0 +1,21 @@
+# =====================================================================
+# Attrition doubles (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The supply-side mirror of Volume +15%, and the more instructive of the
+# two: demand is somebody else's decision, but attrition is partly the
+# operation's own, and the cost of losing people is mostly invisible until
+# somebody models the lead time to replace them.
+#
+# The multiplier applies to each role's MONTHLY rate before the weekly
+# conversion. Every role doubles, so the roster drains from every side at
+# once and the hiring plan has to answer for all of them.
+# =====================================================================
+scenario:
+  name: "Attrition doubles"
+  starts_week: 1
+  what_it_changes: "Monthly attrition x 2, all roles"
+
+overrides:
+  scenario:
+    attrition_multiplier: 2.0

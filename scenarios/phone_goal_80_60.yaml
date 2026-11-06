@@ -1,0 +1,20 @@
+# =====================================================================
+# Phone service goal, 80% in 60 seconds (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The far end of the same decision: a minute on hold instead of twenty
+# seconds. Worth running next to 80/30 because the saving is not linear -
+# Erlang C's service level climbs steeply once staffing clears the
+# traffic and barely at all before it, so the first ten seconds of slack
+# buy more than the next thirty.
+# =====================================================================
+scenario:
+  name: "Phone goal 80/60"
+  starts_week: 1
+  what_it_changes: "Phones answered 80% within 60 seconds instead of 20"
+
+overrides:
+  live_queues:
+    goals:
+      - code: phones
+        target_seconds: 60

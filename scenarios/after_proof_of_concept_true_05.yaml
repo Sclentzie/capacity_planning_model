@@ -1,0 +1,39 @@
+# =====================================================================
+# After proof of concept - sensitivity, true error rate 0.5%
+# (spec Section 7, added 11/02)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The machine sits EXACTLY ON the target it is being judged against.
+#
+# This is the run that shows why the gate has to be modelled rather than
+# assumed. With the true rate at 0.3% and the target at 0.5%, the machine
+# has headroom and only an unlucky week reads high. Sit it at 0.5% and
+# the headroom is gone: the observed rate is now above target about half
+# the time by luck alone, so a rule needing 12 CONSECUTIVE clean weeks is
+# asking for something close to a dozen coin flips in a row.
+#
+# The statistics are worth saying plainly, because this is the trap in
+# every sampled service measurement in the model: a machine that is
+# genuinely AT its target will usually fail a gate set at its target. A
+# gate is not a measurement of the machine, it is a measurement of the
+# machine plus the sample size - and the operation chose the sample size.
+#
+# Everything else is identical to the main run, so the only difference
+# between them is the true rate.
+# =====================================================================
+scenario:
+  name: "After PoC, true rate 0.5%"
+  starts_week: 27
+  what_it_changes: "Same gate, with the automation's true error rate sitting on the 0.5% target instead of under it"
+
+overrides:
+  scenario:
+    proof_of_concept:
+      enabled: true
+      true_error_rate: 0.005
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10
+      only_work_types: [W5, W8]

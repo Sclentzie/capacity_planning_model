@@ -1,0 +1,77 @@
+# =====================================================================
+# skills.yaml - which role can do which work
+# Source of truth: docs/Capacity_Model_Spec.md (Section 1 "Staff pools" and
+# "Request types and skills"; spec 4.4 "Remote fulfillment by skill")
+#
+# SESSION 2 SKELETON: the pools, the roles, and the request-type routing the
+# demand split needs. The full role x work-type matrix (W1-W23) arrives in
+# Session 3, when handle times and work types enter assumptions.yaml.
+#
+# The WFM idea: this model is SKILL-BASED with no transfers (spec 5.3). A
+# person can only absorb work their role is qualified for, so a surplus in
+# one role never silently rescues a shortfall in another. That is why the
+# skill matrix is an input of its own rather than an assumption buried in
+# the code - spec Section 9 tests that no request is ever assigned to a tier
+# without that skill.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# POOLS AND ROLES (spec Section 1 "Staff pools (skill-based, no transfers)")
+# Every role has required paid breaks and an unpaid lunch.
+# ---------------------------------------------------------------------
+pools:
+  - code: onsite
+    name: "Onsite"
+    based: "at a site"
+    roles: [onsite_associate, records_specialist]
+  - code: remote
+    name: "Remote"
+    based: "remote team"
+    roles: [tier_1, tier_2, qa_specialist]
+
+roles:
+  - code: onsite_associate
+    name: "Onsite Associate"
+    pool: onsite
+    works: "Walk-in requesters, phones, site emails and portal messages"
+  - code: records_specialist
+    name: "Records Specialist"
+    pool: onsite
+    works: "Non-digital retrieval, digitization, missing-record searches, certified copies"
+    # spec Section 1: skills run ONE WAY. Records Specialists also hold the
+    # Onsite Associate skills and help with walk-ins and phones when idle;
+    # Onsite Associates do NOT handle non-digital records.
+    also_holds_skills_of: [onsite_associate]
+  - code: tier_1
+    name: "Remote Fulfillment Specialist, Tier 1"
+    pool: remote
+    works: "The request pipeline for Tier 1 request types"
+  - code: tier_2
+    name: "Remote Fulfillment Specialist, Tier 2"
+    pool: remote
+    works: "The request pipeline for Tier 2 request types"
+  - code: qa_specialist
+    name: "QA Specialist"
+    pool: remote
+    # spec Section 9: every QA sample, quality review, and rework item lands
+    # on the QA team, never on the tier that did the work.
+    works: "All QA: quality review, the QA sample of automated work, and rework"
+
+# ---------------------------------------------------------------------
+# REQUEST-TYPE ROUTING (spec Section 1 table, approved 10/21)
+# Which tier is allowed to work each request type. The tier is repeated in
+# assumptions.yaml next to each request type's share; this list is the one
+# the routing logic reads, and the two must agree.
+# ---------------------------------------------------------------------
+request_type_skills:
+  tier_1: [R1, R2, R3]
+  tier_2: [R4, R5, R6, R7, R8, R9, R10, R11]
+
+# ---------------------------------------------------------------------
+# NOT YET IN THIS FILE - later sessions:
+#   Session 3: the full role x work-type matrix for W1-W23, including the
+#              "By request type" rows in spec Section 1 that split by tier,
+#              and the onsite priority order in spec 4.5
+#   Session 4: human sign-off ownership for the legally required rows
+#              (W7, R8 releases, notarization) - spec 5.5
+# ---------------------------------------------------------------------

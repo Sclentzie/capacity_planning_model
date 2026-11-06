@@ -1,0 +1,34 @@
+# =====================================================================
+# Site shortfall at N1, 2-hour borrow minimum (spec 7, decided 10/27)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The same four-week shortfall, with the only input that plausibly
+# explains why borrowing covered 3% of it relaxed.
+#
+# The 4-hour minimum exists because nobody drives half an hour each way
+# to cover one hour (6.7, 10/26), and it is the right default. But during
+# the N1 shortfall its neighbours had 1.6 to 4.5 hours spare on exactly
+# the days N1 was short - just under the minimum plus the drive - so the
+# question is whether the minimum is what blocked the coverage or whether
+# there was never enough to borrow.
+#
+# Two hours is still a real trip: 0.73 hours of driving for 2 hours of
+# work is a 37% overhead, which a supervisor might authorise in a crisis
+# and would not as a standing policy. That is why it is a sensitivity run
+# and not a change to the default.
+# =====================================================================
+scenario:
+  name: "Site shortfall N1, 2h borrow"
+  starts_week: 20
+  what_it_changes: "N1 loses 20% of its Onsite Associate hours for 4 weeks; borrow minimum 2 hours"
+
+overrides:
+  scenario:
+    site_shortfall:
+      site: "N1"
+      share_of_hours_lost: 0.20
+      weeks: 4
+
+site_overrides:
+  travel:
+    minimum_borrow_hours: 2

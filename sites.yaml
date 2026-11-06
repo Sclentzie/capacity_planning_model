@@ -1,0 +1,106 @@
+# =====================================================================
+# sites.yaml - sites, size factors, clusters
+# Northbrook Records Services is FICTIONAL. These sites do not exist.
+# Source of truth: docs/Capacity_Model_Spec.md (Section 1; calendar and
+# names decided 10/21, spec Section 10)
+#
+# SESSION 2 SKELETON: clusters, sites, and the size factor the demand
+# generator needs (spec 3.1). Headcount, travel times, and cost come later.
+#
+# What a site is (spec Section 1): one client facility, where onsite
+# associates are based and where requesters can walk in.
+# What a cluster is (spec Section 1): a group of sites close enough to cover
+# each other on short notice. Coverage is temporary help, never a transfer -
+# staff belong to a home site or to the remote team.
+# =====================================================================
+
+clusters:
+  - code: north
+    name: "Cluster North"           # spec Section 1: sites N1, N2, N3
+    sites: [N1, N2, N3]
+  - code: south
+    name: "Cluster South"           # spec Section 1: sites S1, S2, S3
+    sites: [S1, S2, S3]
+
+# ---------------------------------------------------------------------
+# SITES
+#
+# size_factor (spec 3.1, decided 10/21): multiplies the 300 base requests per
+# week, so sites differ in volume the way real facilities do. The six values
+# are named in the spec 3.1 ingredient table. They span the 0.8-1.2 range and
+# average exactly 1.0, so network volume starts at 6 x 300 = 1,800 requests
+# per week before growth, season, holidays, and noise.
+#
+# Nothing in the code assumes a particular value or that they average 1.0.
+# ---------------------------------------------------------------------
+sites:
+  - code: N1
+    name: "Northbrook North 1 (synthetic)"
+    cluster: north
+    size_factor: 1.2                # largest site in the network
+  - code: N2
+    name: "Northbrook North 2 (synthetic)"
+    cluster: north
+    size_factor: 1.0
+  - code: N3
+    name: "Northbrook North 3 (synthetic)"
+    cluster: north
+    size_factor: 0.9
+  - code: S1
+    name: "Northbrook South 1 (synthetic)"
+    cluster: south
+    size_factor: 1.1
+  - code: S2
+    name: "Northbrook South 2 (synthetic)"
+    cluster: south
+    size_factor: 0.8                # smallest site in the network
+  - code: S3
+    name: "Northbrook South 3 (synthetic)"
+    cluster: south
+    size_factor: 1.0
+
+# ---------------------------------------------------------------------
+# SITE-TO-SITE TRAVEL (spec 6.7; defaults decided 10/26)
+#
+# What makes cluster coverage cost something. A site that lends four hours
+# does not lose four hours: it loses four plus the round trip, and somebody
+# claims the mileage. Leaving travel out would make borrowing look free and
+# the plan would borrow constantly.
+#
+# Only pairs inside a cluster appear, because spec 6.2 never borrows across
+# one. Illustrative drive times of 20 to 35 minutes and 12 to 24 miles.
+# Each entry is ONE WAY; the model doubles both for the round trip.
+# ---------------------------------------------------------------------
+travel:
+  mileage_rate: 0.70                   # spec 6.7: dollars per mile, illustrative
+  minimum_borrow_hours: 4              # decided 10/26: half a day
+  # Nobody drives 30 minutes each way to cover one hour, which is the whole
+  # point of the minimum: it stops the model buying coverage that no real
+  # supervisor would authorise.
+
+  pairs:
+    # Cluster North
+    - sites: [N1, N2]
+      minutes: 22
+      miles: 14
+    - sites: [N1, N3]
+      minutes: 31
+      miles: 21
+    - sites: [N2, N3]
+      minutes: 26
+      miles: 17
+    # Cluster South
+    - sites: [S1, S2]
+      minutes: 24
+      miles: 15
+    - sites: [S1, S3]
+      minutes: 34
+      miles: 23
+    - sites: [S2, S3]
+      minutes: 28
+      miles: 19
+
+# ---------------------------------------------------------------------
+# NOT YET IN THIS FILE - later sessions:
+#   Session 3: site open hours and the intraday arrival pattern (spec 3.4)
+# ---------------------------------------------------------------------

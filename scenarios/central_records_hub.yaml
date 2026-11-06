@@ -1,0 +1,47 @@
+# =====================================================================
+# Central records hub (spec Section 7, decided 11/02)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Every non-digital record held at one site, with one pooled team
+# retrieving for the whole network and sending items on by interoffice
+# delivery.
+#
+# Read this one next to "Centralized phones", because both pool a team
+# and only one of them gets something for nothing.
+#
+#   PHONES pool through ERLANG. One large random queue needs
+#     proportionally less spare capacity than six small ones, and the
+#     gain is free because a call does not travel.
+#
+#   RECORDS cannot. Retrieval is BACKLOG work, and a backlog has no
+#     Erlang penalty to pool away - a hundred hours of chart pulls is a
+#     hundred hours wherever it sits, because a backlog is allowed to
+#     wait. What a hub buys is ROUNDING: six sites each round a fractional
+#     requirement up to a whole person, so 14.25 FTE of work becomes 17
+#     people at six sites and 15 at one hub. The 2-per-site floor the
+#     spec paragraph points at turns out to be worth almost nothing here,
+#     because every site needs about 2.2 to 2.8 anyway (measured 11/02).
+#
+# So this scenario is a structural saving, not a statistical one, and it
+# pays for it twice - in delivery days on every hub-retrieved item, and
+# in the counter help (4.5) that leaves the five other sites along with
+# their Records Specialists.
+#
+# The hub is CHOSEN, not stated: the site with the lowest volume-weighted
+# delivery days. Putting it at the busiest site takes the largest single
+# delivery weight to zero, so the answer is the largest site unless the
+# geography says otherwise, and the report names the runner-up.
+#
+# NOT MODELLED: the one-time cost of moving the archive. Boxes, trucks,
+# re-indexing, and the service running at two addresses while it happens.
+# Every figure here is an UPPER BOUND on the hub's case.
+# =====================================================================
+scenario:
+  name: "Central records hub"
+  starts_week: 13
+  what_it_changes: "All non-digital records at one hub; one pooled records team, items delivered to the requesting site"
+
+overrides:
+  scenario:
+    records_hub:
+      enabled: true

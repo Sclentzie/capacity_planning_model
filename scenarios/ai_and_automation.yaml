@@ -1,0 +1,40 @@
+# =====================================================================
+# AI and automation (spec Section 7, 7.1)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Both halves of the AI story at their 7.1 defaults, from plan week 13.
+#
+# DEFLECTION, demand side: 40% of status calls and emails are simple, and
+# 15% + 5% of those never arrive - an 8% cut in contacts. The ones that go
+# are the EASY ones, worth half an average contact, so workload FALLS 4%
+# while the remaining contacts average 4.35% more minutes each. That mix
+# uplift is calculated, not assumed (spec 7.2, revised 10/28).
+#
+# AUTOMATION, supply side: 40% of eligible items are simple and 10% + 10%
+# of those go to a machine - an 8% target share - which comes back as
+# exceptions, QA samples and legal sign-off (5.5) and leaves the items
+# people still work with their own calculated mix uplift.
+#
+# ESCALATION AND EXTRA UPLIFT ARE ZERO HERE, spec 7.1's default since
+# 10/28. They are what the case actually turns on - a contact that tried a
+# portal first and rang anyway is genuinely harder - and break-even
+# escalation is 4.17% on the demand side. Sweeping them is how this run
+# should be read, not taking it at face value.
+#
+# Both rates share one realization field (7.1), so the 50%-realized run
+# is one number away.
+# =====================================================================
+scenario:
+  name: "AI and automation"
+  starts_week: 13
+  what_it_changes: "The four 7.1 rates at their defaults: deflection and automation"
+
+overrides:
+  scenario:
+    deflection:
+      enabled: true
+  automation:
+    rates:
+      simple_task_share: 0.40
+      ai_handling: 0.10
+      automation_displacement: 0.10

@@ -1,0 +1,36 @@
+# =====================================================================
+# Site shortfall (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# N1 loses 20% of its Onsite Associate hours for four weeks from plan
+# week 20 - one of five people out on leave, sickness or secondment. They
+# are still PAID, so headcount, cost and the overtime cap stay at
+# baseline and the scenario reports the cost of COVERING the gap rather
+# than a payroll saving that would flatter it.
+#
+# WHY N1. This is the strongest test of cluster borrowing the network can
+# offer, on both halves of what borrowing needs:
+#
+#   - the biggest hole. N1 is the largest site (size factor 1.2) with 5
+#     Onsite Associates, so 20% is about 128 hours over the four weeks -
+#     more than any other site loses.
+#   - the most generous neighbour. Counted per unit of size factor, N2
+#     carries 5.00 heads against N1's 4.17 and N3's 4.44, which makes it
+#     the best-staffed site in the cluster and the one with hours to
+#     spare. Cluster South's two generous sites are S2 and S3, so
+#     shorting either would take away that cluster's own best lender.
+#
+# Picking the best case on purpose, because the interesting result is
+# what happens even then.
+# =====================================================================
+scenario:
+  name: "Site shortfall N1"
+  starts_week: 20
+  what_it_changes: "N1 loses 20% of its Onsite Associate hours for 4 weeks"
+
+overrides:
+  scenario:
+    site_shortfall:
+      site: "N1"
+      share_of_hours_lost: 0.20
+      weeks: 4

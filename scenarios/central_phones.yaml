@@ -1,0 +1,30 @@
+# =====================================================================
+# Centralized phones (spec Section 7, decided 10/27)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# From plan week 13, one network phone team answers every call at 80%
+# within 20 seconds, and each site's counter staffs walk-ins alone at 90%
+# within 10 minutes. The blend (4.1) stops applying.
+#
+# The case for it is Erlang C: six sites each keeping somebody free in
+# case the phone rings keep six people free, and one queue keeps fewer.
+# The case against is everything the blend was quietly doing - a counter
+# taking a handful of walk-ins an hour still needs somebody standing at
+# it, and today that somebody is answering the phone between requesters.
+#
+# Three costs are reported separately so the argument cannot hide in a
+# net number: the pooling gain, what the 85% occupancy cap takes back,
+# and what +5% handle time costs for the lost local knowledge.
+#
+# Sites share one local time, which is what makes pooling possible at
+# all: six queues in six time zones do not peak together.
+# =====================================================================
+scenario:
+  name: "Centralized phones"
+  starts_week: 13
+  what_it_changes: "One central phone team from week 13; counters staff walk-ins only"
+
+overrides:
+  scenario:
+    central_phones:
+      enabled: true

@@ -1,0 +1,47 @@
+# Capacity Model - Python dependencies
+# Synthetic-data workforce capacity model. See docs/Capacity_Model_Spec.md.
+#
+# Pinned to exact versions, because the whole point of a fixed random seed
+# is that two runs give the same answers - and a library that rounds, sorts
+# or seasonally decomposes differently in a later release would break that
+# quietly. These are the versions the 655 validation checks were run on
+# (Python 3.14, Windows). Raising one is a deliberate step: bump it, run the
+# suite, and the pinned headline figures in tests will say if an answer moved.
+
+# --- what the model itself imports ---
+numpy==2.5.4            # numeric arrays; the arithmetic behind demand, workload, and supply
+pandas==3.0.6           # weekly tables by site/role/week - the shape of every model output
+statsmodels==0.15.0     # Holt-Winters challenger forecast (spec 3.2)
+pyyaml==6.0.3           # reads assumptions.yaml, sites.yaml, skills.yaml, scenarios/
+openpyxl==3.1.5         # writes the Excel workbook outputs (spec 8)
+matplotlib==3.11.2      # charts of history, forecast, and gap over time
+pytest==9.1.1           # the validation checks in spec 9
+
+# --- pulled in by those, pinned too so a clean install reproduces the run ---
+# pandas
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.5
+# statsmodels
+scipy==1.18.1
+patsy==1.0.3
+formulaic==1.2.2
+interface_meta==2.0.1
+narwhals==2.27.1
+wrapt==2.5.2rc1
+typing_extensions==4.16.0
+# matplotlib
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.67.0
+kiwisolver==1.5.1
+pillow==13.0.0
+pyparsing==3.3.3
+# openpyxl
+et_xmlfile==2.0.0
+# pytest
+iniconfig==2.3.1
+pluggy==1.7.0
+Pygments==2.21.0
+packaging==26.3
+colorama==0.4.6         # pytest's coloured output on Windows

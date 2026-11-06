@@ -1,0 +1,26 @@
+# =====================================================================
+# Phone service goal, 80% in 30 seconds (spec Section 7)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# Session 3 found that at small sites it is the 20-second answer target,
+# not headcount or volume, that drives onsite staffing: blended occupancy
+# sits around 30% and the 85% cap never binds. In other words the counter
+# is staffed to be AVAILABLE, not to be busy - so the service goal is the
+# real cost driver, and it is the one input a leader can change by
+# deciding to.
+#
+# Ten more seconds of permitted wait is the smallest version of that
+# decision. The walk-in goal is untouched and still binds: 90% within 10
+# minutes, which pooled_required_staff tops up for after solving the
+# phone target.
+# =====================================================================
+scenario:
+  name: "Phone goal 80/30"
+  starts_week: 1
+  what_it_changes: "Phones answered 80% within 30 seconds instead of 20"
+
+overrides:
+  live_queues:
+    goals:
+      - code: phones
+        target_seconds: 30

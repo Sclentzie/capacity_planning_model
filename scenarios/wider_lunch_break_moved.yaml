@@ -1,0 +1,29 @@
+# =====================================================================
+# Wider lunch, break moved (spec Section 7, added 10/27)
+# Northbrook Records Services is FICTIONAL; all data is SYNTHETIC.
+#
+# The fix for what the plain wider-lunch run exposed. Widening lunch to
+# 14:30 on its own is self-cancelling: 14:00 is also in the afternoon
+# break window, so lunch relief stacks on break relief there and the one
+# overlapping half-hour costs about what the six thinned ones save.
+#
+# Moving the afternoon break to 14:30 removes the overlap. Lunch then
+# genuinely spreads over seven half-hours at 30/210 = 14.3% away instead
+# of six at 16.7%, and the break keeps its own 90 minutes to hide in.
+#
+# Nobody's break gets shorter and nobody's lunch gets longer. The only
+# thing that changes is WHEN each may be taken, which is a rota decision
+# and costs nothing to make.
+# =====================================================================
+scenario:
+  name: "Wider lunch, break moved"
+  starts_week: 1
+  what_it_changes: "Lunch 11:00 to 14:30 and the afternoon break window 14:30 to 16:00"
+
+overrides:
+  breaks_and_lunch:
+    reliefs:
+      - code: lunch
+        window: {from: "11:00", to: "14:30"}
+      - code: afternoon_break
+        window: {from: "14:30", to: "16:00"}
