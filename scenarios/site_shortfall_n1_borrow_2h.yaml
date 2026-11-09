@@ -21,6 +21,7 @@ scenario:
   name: "Site shortfall N1, 2h borrow"
   starts_week: 20
   what_it_changes: "N1 loses 20% of its Onsite Associate hours for 4 weeks; borrow minimum 2 hours"
+  kind: sensitivity                   # varies one input of another run, to test whether its finding holds
 
 overrides:
   scenario:

@@ -124,13 +124,22 @@ It opens in a browser and reads the saved results in
 `app/data/scenario_results_SYNTHETIC.json.gz` — all 21 runs, so the page loads
 in under a second instead of waiting out the model.
 
-Pick a run in the sidebar — the baseline first, then the eight the Summary tab
-headlines, then the rest, with each sensitivity marked for the run it varies —
-and filter to the network, a cluster or a site, and to the roles inside it. The
-page shows the six headline measures against the baseline, that run's one-line
-finding where the Summary has one, the weekly shortfall against the baseline,
-the all-in cost split into labour and machine, and the Capacity Plan rows
-behind all of it, with a CSV download.
+There are two views. **One run**: pick a run in the sidebar — the baseline
+first, then the eight the Summary tab headlines, then the rest — and filter to
+the network, a cluster or a site, and to the roles inside it. The page shows the
+six headline measures against the baseline, that run's one-line finding where
+the Summary has one, the weekly shortfall against the baseline, the all-in cost
+split into labour and machine, and the Capacity Plan rows behind all of it, with
+a CSV download. **Compare all scenarios**: every run at once, ranked by what it
+does to the all-in cost.
+
+Each run declares what KIND it is, in its own scenario file: a **choice** is
+something the operation could decide to do, a **risk** is something that could
+happen to it that nobody is proposing, and a **sensitivity** varies one input of
+another run to test whether its finding holds. The dashboard shows it beside
+every run and the workbook names sensitivity runs in italics, both reading the
+same declared field — a sensitivity read as a proposal is how a finding gets
+quoted as something it never said.
 
 Back-office roles are one network team rather than site staff, so a site or
 cluster view says that in words instead of drawing them at zero: a role that
@@ -148,7 +157,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 709 tests, about 75 minutes
+# The validation checks: 720 tests, about 75 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -188,7 +197,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-709 tests across 23 files, all passing. Every validation check in the
+720 tests across 23 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference

@@ -49,6 +49,12 @@ CUSTOM_RUN_KEY = "custom"
 CUSTOM_RUN_NAME = "Custom run"
 NOTHING_CHANGED = "Nothing; the baseline inputs unchanged"
 
+# A run somebody builds in the dashboard is a CHOICE: they are asking
+# whether something is worth doing. A risk is something that happens to
+# the operation and a sensitivity varies another run, and neither is what
+# a control panel produces. A caller who means one of those says so.
+CUSTOM_RUN_KIND = scenarios.KIND_CHOICE
+
 # The headline measures, each with the workbook's own column header, so a
 # figure is called the same thing in the dashboard as on the tab. The
 # headers are checked against export.SCENARIO_COLUMNS by a test rather
@@ -134,6 +140,7 @@ def scenario_from_overrides(mapping=None, baseline=None, key=CUSTOM_RUN_KEY):
     header.setdefault("name", CUSTOM_RUN_NAME)
     header.setdefault("starts_week", baseline["scenario"]["starts_week"])
     header.setdefault("what_it_changes", describe_overrides(mapping))
+    header.setdefault("kind", CUSTOM_RUN_KIND)
     mapping["scenario"] = header
 
     return scenarios.scenario_from_mapping(mapping, key, label=header["name"])
@@ -167,6 +174,7 @@ def results(built, key=None):
         "name": built["scenario"]["name"],
         "starts_week": built["scenario"]["starts_week"],
         "what_it_changes": built["scenario"]["what_it_changes"],
+        "kind": built["scenario"]["kind"],
         "summary": scenarios.summarise(built, assumptions, built["sites"]),
         # Weekly gap by site and role, with the cost, service levels and
         # days of inventory already beside it: the Capacity Plan tab.
@@ -418,6 +426,7 @@ def payload(bundle, assumptions=None):
             "name": result["name"],
             "starts_week": result["starts_week"],
             "what_it_changes": result["what_it_changes"],
+            "kind": result["kind"],
             "summary": {
                 name: _plain(value) for name, value in result["summary"].items()
             },
@@ -495,7 +504,7 @@ def load_results(path=None, assumptions=None):
     for key, saved in raw["scenarios"].items():
         shaped = {
             name: saved[name]
-            for name in ("key", "name", "starts_week", "what_it_changes")
+            for name in ("key", "name", "starts_week", "what_it_changes", "kind")
         }
         shaped["summary"] = saved["summary"]
         shaped["machine_spend"] = saved["machine_spend"]

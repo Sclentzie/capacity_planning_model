@@ -27,6 +27,7 @@ scenario:
   name: "Site shortfall N1"
   starts_week: 20
   what_it_changes: "N1 loses 20% of its Onsite Associate hours for 4 weeks"
+  kind: risk                          # something that could happen TO the operation; nobody is proposing it
 
 overrides:
   scenario:

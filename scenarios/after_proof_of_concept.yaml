@@ -42,6 +42,7 @@ scenario:
   name: "After proof of concept"
   starts_week: 27
   what_it_changes: "AI targeted, plus a measured error-rate gate that halves QA sample rates once it clears; legal sign-offs unchanged"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   scenario:

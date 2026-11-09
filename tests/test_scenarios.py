@@ -93,6 +93,7 @@ def late(key, value, starts_week):
         "name": f"Late {key}",
         "starts_week": starts_week,
         "what_it_changes": "built in the test",
+        "kind": scenarios.KIND_CHOICE,
         "overrides": {"scenario": {key: value}},
     }
 
@@ -167,7 +168,7 @@ def test_a_scenario_file_is_data_and_nothing_else(loaded):
     """Only two top-level keys, and the overrides are plain values."""
     for scenario in loaded:
         assert set(scenario) == {
-            "key", "path", "name", "starts_week", "what_it_changes",
+            "key", "path", "name", "starts_week", "what_it_changes", "kind",
             "overrides", "site_overrides",
         }
         assert isinstance(scenario["overrides"], dict)
@@ -310,6 +311,15 @@ def test_a_real_key_is_accepted_at_any_depth(baseline):
     assert merged["automation"]["ramp"] == [0.5, 1.0]
 
 
+GOOD_HEADER = (
+    "scenario:\n"
+    "  name: 'x'\n"
+    "  starts_week: 1\n"
+    "  what_it_changes: 'y'\n"
+    "  kind: choice\n"
+)
+
+
 def test_a_malformed_scenario_file_is_refused(tmp_path):
     """A missing identity block, or a stray top-level key."""
     bad = tmp_path / "bad.yaml"
@@ -317,13 +327,84 @@ def test_a_malformed_scenario_file_is_refused(tmp_path):
     with pytest.raises(ValueError, match="needs"):
         scenarios.load_scenario(bad)
 
-    bad.write_text(
-        "scenario:\n  name: 'x'\n  starts_week: 1\n  what_it_changes: 'y'\n"
-        "overides: {}\n",
-        encoding="utf-8",
-    )
+    bad.write_text(GOOD_HEADER + "overides: {}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="unexpected top-level keys"):
         scenarios.load_scenario(bad)
+
+
+def test_every_scenario_declares_what_kind_of_run_it_is(loaded):
+    """Decided 11/09: kind is declared, never inferred.
+
+    A reader does three different things with these runs. A CHOICE is
+    something the operation could decide to do; a RISK is something that
+    could happen to it, which nobody is proposing; a SENSITIVITY varies
+    one input of another run to test whether its finding holds. Reading
+    one as another is how a figure gets misused - "AI pays back" quoted
+    out of the 50% variant, or a risk read as a recommendation.
+
+    The dashboard grouping and the workbook's italics both read this
+    field, so a run with no kind would be silently miscategorised in two
+    places at once.
+    """
+    for scenario in loaded:
+        assert scenario["kind"] in scenarios.KINDS, scenario["key"]
+
+
+def test_the_kinds_are_the_ones_the_architect_tagged(loaded):
+    """The 11/09 tagging, recorded so a re-tag has to be deliberate."""
+    kind_of = {scenario["key"]: scenario["kind"] for scenario in loaded}
+    assert {
+        key for key, kind in kind_of.items() if kind == scenarios.KIND_RISK
+    } == {"volume_plus_15", "attrition_doubles", "site_shortfall_n1", "combined"}
+    assert {
+        key for key, kind in kind_of.items()
+        if kind == scenarios.KIND_SENSITIVITY
+    } == {
+        "site_shortfall_n1_borrow_2h", "ai_and_automation_50",
+        "after_proof_of_concept_true_05", "combined_ai_100",
+    }
+    choices = [
+        key for key, kind in kind_of.items() if kind == scenarios.KIND_CHOICE
+    ]
+    assert len(choices) == 13
+    assert "baseline" in choices
+
+
+def test_a_run_with_no_kind_or_an_invented_one_is_refused(tmp_path):
+    """The field is required, and only the three are allowed.
+
+    A fourth kind invented in a file would reach the dashboard's grouping
+    and the workbook's italics as an unknown, and both would quietly fall
+    back to treating it as ordinary.
+    """
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        GOOD_HEADER.replace("  kind: choice\n", ""), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="kind"):
+        scenarios.load_scenario(bad)
+
+    bad.write_text(
+        GOOD_HEADER.replace("choice", "interesting"), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="one of"):
+        scenarios.load_scenario(bad)
+
+
+def test_a_run_built_in_code_declares_its_kind_too():
+    """The validator guards the files; nothing guards a record built here.
+
+    Three runs are assembled in Python rather than read from a file: the
+    sweep's eleven steps and the two combined variants. The sweep steps
+    are built from scratch, so they declare the field themselves (a step
+    is a SENSITIVITY: it varies one input of the Monday part-time run
+    across its range to find out whether that run's chosen share is the
+    right one). The variants copy a scenario file, so they inherit it.
+    Missing, the row reaches the comparison table with no kind at all -
+    which is how this was found, by five sweep tests failing on it.
+    """
+    assert scenarios.part_time_variant(0.02)["kind"] in scenarios.KINDS
+    assert scenarios.part_time_variant(0.02)["kind"] == scenarios.KIND_SENSITIVITY
 
 
 # ---------------------------------------------------------------------------
@@ -637,7 +718,8 @@ def test_the_comparison_lines_up_every_scenario_with_the_baseline_first(result):
     }
 
     expected = {
-        "scenario", "starts_week", "what_it_changes", "plan_year_requests",
+        "scenario", "starts_week", "what_it_changes", "kind",
+        "plan_year_requests",
         "peak_gap_fte", "weeks_short", "overtime_hours",
         "uncovered_hours", "total_cost", "labour_cost", "machine_cost",
         "cost_per_request", "hiring_classes",
@@ -659,7 +741,7 @@ def test_the_comparison_lines_up_every_scenario_with_the_baseline_first(result):
     }
     assert set(table.columns) == expected | planner
 
-    numeric = expected - {"scenario", "what_it_changes"}
+    numeric = expected - {"scenario", "what_it_changes", "kind"}
     assert table[sorted(numeric)].notna().all().all()
 
     with_machine = {

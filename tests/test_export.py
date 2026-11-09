@@ -294,6 +294,38 @@ def test_every_written_value_is_the_model_s_own_figure(book, comparison):
     assert sheet.max_row == first + len(comparison) - 1
 
 
+def test_a_sensitivity_run_is_named_in_italics(book, comparison):
+    """Decided 11/09: the tab says which runs are sensitivities.
+
+    A sensitivity varies one input of another run to test whether its
+    finding holds. Sitting in a list of 21 it reads as a proposal of its
+    own, which is how "AI pays back" gets quoted out of the 50% variant.
+    The kind is the run's own declared field, so the italics cannot drift
+    from the dashboard's grouping - both read the same thing.
+    """
+    sheet = book["Capacity Scenarios"]
+    first = export.SCENARIO_FIRST_DATA_ROW
+    letter = export.SCENARIO_LETTERS["Scenario"]
+
+    italic = set()
+    for offset in range(len(comparison)):
+        cell = sheet[f"{letter}{first + offset}"]
+        if cell.font.italic:
+            italic.add(cell.value)
+
+    expected = set(
+        comparison.index[comparison["kind"] == scenarios.KIND_SENSITIVITY]
+    )
+    assert expected  # the tagging is real, or this test proves nothing
+    assert italic == expected
+
+    # And the tab says what the italics mean, where they are read.
+    notes = " ".join(
+        str(sheet[f"A{row}"].value or "") for row in range(1, first)
+    )
+    assert "SENSITIVITIES" in notes
+
+
 def test_the_baseline_leads_the_table_because_the_formulas_point_at_it(book):
     """Its row is the one every difference is measured against."""
     sheet = book["Capacity Scenarios"]

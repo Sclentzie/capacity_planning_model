@@ -21,6 +21,7 @@ scenario:
   name: "Wider lunch window"
   starts_week: 1
   what_it_changes: "Lunch window 11:00 to 14:30 instead of 11:00 to 14:00"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   breaks_and_lunch:

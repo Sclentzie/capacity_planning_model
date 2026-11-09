@@ -41,7 +41,30 @@ from . import (
 # The keys a scenario file always sets, because they identify it rather
 # than change the model. The diff test treats them separately from the
 # overrides a scenario actually declares.
-IDENTITY_KEYS = ("name", "starts_week", "what_it_changes")
+IDENTITY_KEYS = ("name", "starts_week", "what_it_changes", "kind")
+
+# WHAT KIND OF RUN THIS IS (decided 11/09, spec decisions "Dashboard
+# views"). Three kinds, because a reader does three different things with
+# them and reading one as another is how a number gets misused:
+#
+#   choice      something the operation could decide to do. The question
+#               is whether it is worth doing.
+#   risk        something that could happen TO the operation. The question
+#               is what it would cost if it did - nobody is proposing it.
+#   sensitivity varies one input of another run, to see whether that run's
+#               finding holds. It is not a scenario in its own right, and
+#               quoting it as one is how "AI pays back" gets said out loud
+#               from the 50% variant.
+#
+# DECLARED, NOT INFERRED. The first version of the dashboard worked this
+# out from the scenario keys - a run whose key was another run's key plus
+# a suffix was taken to be a variant of it. That is a guess about file
+# naming standing in for a fact about the run, and it would have been
+# wrong the first time two unrelated runs shared a prefix.
+KIND_CHOICE = "choice"
+KIND_RISK = "risk"
+KIND_SENSITIVITY = "sensitivity"
+KINDS = (KIND_CHOICE, KIND_RISK, KIND_SENSITIVITY)
 
 
 def scenario_dir(assumptions=None):
@@ -102,12 +125,18 @@ def scenario_from_mapping(raw, key, label=None):
             f"{label}: unexpected keys in the scenario block {sorted(stray)}; "
             f"it holds {list(IDENTITY_KEYS)}"
         )
+    if header["kind"] not in KINDS:
+        raise ValueError(
+            f"{label}: kind is {header['kind']!r}; a run is one of "
+            f"{list(KINDS)}"
+        )
 
     return {
         "key": key,
         "name": header["name"],
         "starts_week": int(header["starts_week"]),
         "what_it_changes": header["what_it_changes"],
+        "kind": header["kind"],
         "overrides": raw.get("overrides") or {},
         # Some inputs live in sites.yaml rather than assumptions.yaml - the
         # travel table and the borrow minimum among them - and a scenario
@@ -509,6 +538,9 @@ def summarise(built, assumptions=None, sites=None):
         "scenario": built["scenario"]["name"],
         "starts_week": built["scenario"]["starts_week"],
         "what_it_changes": built["scenario"]["what_it_changes"],
+        # Carried on the row so a reader of the comparison table can tell
+        # a risk from a proposal without going back to the files.
+        "kind": built["scenario"]["kind"],
         "plan_year_requests": requests,
         "onsite_required_fte": onsite_fte,
         "back_office_required_fte": back_office_fte,
@@ -898,6 +930,12 @@ def part_time_variant(share, baseline=None):
         "what_it_changes": (
             f"{share:.0%} of Onsite Associate paid hours to Monday/Tuesday part-timers"
         ),
+        # A sweep step is a SENSITIVITY, not a proposal: it varies one
+        # input of the Monday part-time run across its range to find out
+        # whether that run's chosen share is the right one. Only the step
+        # the sweep picks out is offered as a choice, and that step is a
+        # scenario file of its own with its own declared kind.
+        "kind": KIND_SENSITIVITY,
         "overrides": {
             "scenario": {
                 "onsite_schedule": {"shape": "part_time", "part_time_share": share}

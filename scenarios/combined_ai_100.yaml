@@ -30,6 +30,7 @@ scenario:
   name: "Combined, AI 100%"
   starts_week: 1
   what_it_changes: "Requests x 1.15 from week 1, plus the full automation program and deflection from week 13"
+  kind: sensitivity                   # varies one input of another run, to test whether its finding holds
 
 overrides:
   scenario:

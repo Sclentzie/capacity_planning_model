@@ -1,10 +1,14 @@
 """The capacity model dashboard: the browse view (spec Section 8, 7b).
 
-Pick a run, filter it, and see what it did to the plan. Every figure on
-the page comes from the saved results that capacity_model.api built, and
-is selected and labelled by capacity_model.views - so the page holds no
-arithmetic of its own, and a number here is the same number the workbook
-prints on the tab of the same name.
+Two views. ONE RUN: pick a run, filter it, and see what it did to the
+plan. COMPARE ALL SCENARIOS: every run at once, ranked by what it does to
+the all-in cost, with each run's declared kind beside it.
+
+Every figure on the page comes from the saved results that
+capacity_model.api built, and is selected and labelled by
+capacity_model.views - so the page holds no arithmetic of its own, and a
+number here is the same number the workbook prints on the tab of the same
+name.
 
 WHY IT READS A FILE. Running the 21 scenarios takes about eight minutes.
 A hosted app that did that on every page view would be unusable, so the
@@ -42,6 +46,19 @@ TITLE = "Northbrook Records Services - capacity model (SYNTHETIC)"
 DELTA_COLOURS = {views.BETTER_LOWER: "inverse", views.NEUTRAL: "off"}
 
 CARDS_PER_ROW = 3
+
+# Widget keys, so a test can ask for the run picker by name rather than
+# by position. Adding the view switcher above the run picker renumbered
+# every index-based lookup in the tests, which is a thing a test should
+# not be able to notice.
+VIEW_KEY = "view"
+RUN_KEY = "run"
+SCOPE_KEY = "scope"
+ROLES_KEY = "roles"
+
+ONE_RUN = "One run"
+COMPARE_ALL = "Compare all scenarios"
+VIEWS = (ONE_RUN, COMPARE_ALL)
 
 
 @st.cache_data
@@ -95,23 +112,22 @@ def staleness_banner(meta):
 
 
 def caption_for(entry):
-    """The one line under a run's name in the picker."""
+    """The one line under a run's name in the picker.
+
+    The kind is the run's own declared field, so a risk cannot be read as
+    a proposal just because it sits in a list of them.
+    """
+    parts = [entry["kind_label"]]
     if entry["key"] == views.BASELINE_KEY:
-        return views.BASELINE_GROUP
-    if entry["sensitivity_of"] is not None:
-        return f"Sensitivity of {entry['sensitivity_of_name']}"
-    if entry["group"] == views.HEADLINE_GROUP:
-        return "Headline run"
-    return "Other run"
+        parts = [views.BASELINE_GROUP]
+    elif entry["group"] == views.HEADLINE_GROUP:
+        parts.insert(0, "Headline")
+    return " - ".join(parts)
 
 
 def pick_run(results):
     """The sidebar run picker: the eight headlines first, then the rest."""
     items = views.menu_items(results)
-    name_of = {entry["key"]: entry["name"] for entry in items}
-    for entry in items:
-        entry["sensitivity_of_name"] = name_of.get(entry["sensitivity_of"])
-
     keys = [entry["key"] for entry in items]
     label_of = {entry["key"]: entry["name"] for entry in items}
     captions = [caption_for(entry) for entry in items]
@@ -123,6 +139,7 @@ def pick_run(results):
         format_func=lambda key: label_of[key],
         captions=captions,
         label_visibility="collapsed",
+        key=RUN_KEY,
     )
 
 
@@ -135,6 +152,7 @@ def pick_filters(dimensions):
         "Network, cluster or site",
         choices,
         format_func=lambda option: option["label"],
+        key=SCOPE_KEY,
     )
 
     offered = views.roles_in_scope(dimensions, choice)
@@ -145,6 +163,7 @@ def pick_filters(dimensions):
         codes,
         default=codes,
         format_func=lambda code: name_of[code],
+        key=ROLES_KEY,
     )
 
     note = views.scope_note(dimensions, choice)
@@ -244,17 +263,59 @@ def show_detail(results, key, choice, roles):
     )
 
 
+def show_comparison(results):
+    """Every run at once, ranked by what it does to the all-in cost."""
+    st.subheader("Every run, ranked by all-in cost against the baseline")
+    st.caption(
+        "The biggest saving first. The workbook's Capacity Scenarios tab "
+        "lists the same runs alphabetically on purpose - a reference table "
+        "that ranks is editorialising - but a reader who opens this view is "
+        "asking which runs save money, so here the answer is the first row. "
+        "Click a column header to sort by it."
+    )
+    table = views.comparison_table(results)
+    st.dataframe(
+        views.comparison_display(table), hide_index=True, width="stretch"
+    )
+    st.caption(
+        "KIND IS DECLARED BY THE RUN, not worked out here. A CHOICE is "
+        "something the operation could decide to do; a RISK is something "
+        "that could happen to it, which nobody is proposing; a SENSITIVITY "
+        "varies one input of another run to test whether its finding holds "
+        "and is not a proposal of its own. The ranking puts all three next "
+        "to each other, and the cheapest row is not always something anyone "
+        "is offering to do."
+    )
+
+
 def main():
     st.set_page_config(page_title="Capacity model (synthetic)", layout="wide")
     st.title(TITLE)
 
     results = saved_results()
     meta = results["meta"]
-    dimensions = filter_dimensions()
 
+    # The banner is drawn before anything else and on every view, because
+    # a screenshot of either one travels on its own.
     synthetic_banner(meta)
     staleness_banner(meta)
 
+    st.sidebar.subheader("View")
+    view = st.sidebar.radio(
+        "View", VIEWS, label_visibility="collapsed", key=VIEW_KEY
+    )
+
+    if view == COMPARE_ALL:
+        # No filters: this view is the network figures for every run, the
+        # same measures the workbook's Summary carries.
+        st.sidebar.caption(
+            f"{meta['scenario_count']} saved runs over {meta['plan_weeks']} "
+            "plan weeks, all synthetic."
+        )
+        show_comparison(results)
+        return
+
+    dimensions = filter_dimensions()
     key = pick_run(results)
     choice, roles = pick_filters(dimensions)
     st.sidebar.caption(

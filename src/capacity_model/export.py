@@ -174,6 +174,11 @@ HEADER_FONT = Font(name=FONT, size=10, bold=True, color="FFFFFF")
 SECTION_FONT = Font(name=FONT, size=11, bold=True)
 BODY_FONT = Font(name=FONT, size=10)
 BODY_BOLD = Font(name=FONT, size=10, bold=True)
+# Sensitivity runs are named in italics on Capacity Scenarios (decided
+# 11/09). A sensitivity varies one input of another run to test whether
+# its finding holds; read as a scenario in its own right it becomes a
+# claim nobody made, so the row says what it is where the row is read.
+BODY_ITALIC = Font(name=FONT, size=10, italic=True)
 
 HEADER_FILL = PatternFill("solid", fgColor="1F3864")
 BASELINE_FILL = PatternFill("solid", fgColor="EDEDED")
@@ -300,7 +305,9 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
         f"all-in cost and every 'vs baseline' column are live Excel "
         f"formulas over them. Costs are stored to the cent and shown to "
         f"the dollar. Turnaround is the requester's view against the "
-        f"{goal}-business-day goal.",
+        f"{goal}-business-day goal. Runs named in italics are "
+        f"SENSITIVITIES: each varies one input of another run to test "
+        f"whether its finding holds, and is not a proposal of its own.",
         NOTE_FONT,
     )
 
@@ -322,7 +329,10 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
             letter = SCENARIO_LETTERS[header]
             font = BODY_BOLD if row == baseline_row else BODY_FONT
             if source == "scenario":
-                cell = _put(sheet, f"{letter}{row}", values["scenario"], font)
+                name_font = font
+                if values.get("kind") == scenarios.KIND_SENSITIVITY:
+                    name_font = BODY_ITALIC
+                cell = _put(sheet, f"{letter}{row}", values["scenario"], name_font)
             elif source is not None:
                 cell = _put(
                     sheet, f"{letter}{row}", float(values[source]), font,

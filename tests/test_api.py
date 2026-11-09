@@ -155,6 +155,7 @@ def test_a_typo_in_the_identity_block_is_refused(baseline_assumptions, sites):
                     "name": "Typo run",
                     "starts_week": 10,
                     "what_it_changes": "nothing",
+                    "kind": "choice",
                     "start_week": 10,
                 }
             },
@@ -184,6 +185,7 @@ def test_a_file_and_a_dashboard_call_are_refused_in_the_same_words(
                     "name": "Typo run",
                     "starts_week": 1,
                     "what_it_changes": "a misspelled key",
+                    "kind": "choice",
                 },
                 **typo,
             }
@@ -208,12 +210,15 @@ def test_a_file_and_a_dashboard_call_are_refused_in_the_same_words(
                 "name": file_scenario["name"],
                 "starts_week": file_scenario["starts_week"],
                 "what_it_changes": file_scenario["what_it_changes"],
+                "kind": file_scenario["kind"],
             },
             "overrides": file_scenario["overrides"],
         },
         key="baseline",
     )
-    for field in ("key", "name", "starts_week", "what_it_changes", "overrides"):
+    for field in (
+        "key", "name", "starts_week", "what_it_changes", "kind", "overrides"
+    ):
         assert typed[field] == file_scenario[field]
 
 
@@ -254,7 +259,14 @@ def test_the_label_names_the_input_that_actually_changed():
 
     # And the identity keys themselves are still not reported as changes.
     named = api.describe_overrides(
-        {"scenario": {"name": "x", "starts_week": 2, "what_it_changes": "y"}}
+        {
+            "scenario": {
+                "name": "x",
+                "starts_week": 2,
+                "what_it_changes": "y",
+                "kind": "risk",
+            }
+        }
     )
     assert named == api.NOTHING_CHANGED
 
@@ -406,6 +418,7 @@ def test_the_saved_results_match_a_fresh_run_of_the_model(saved, fresh):
         assert saved_run["name"] == fresh_run["name"], key
         assert saved_run["starts_week"] == fresh_run["starts_week"], key
         assert saved_run["what_it_changes"] == fresh_run["what_it_changes"], key
+        assert saved_run["kind"] == fresh_run["kind"], key
 
         assert set(saved_run["summary"]) == set(fresh_run["summary"]), key
         for measure, value in fresh_run["summary"].items():
@@ -518,7 +531,11 @@ def test_the_dashboard_opens_the_saved_results_file(saved):
     ).run()
     assert not app.exception, app.exception
 
-    offered = app.sidebar.radio[0].options
+    picker = [
+        element for element in app.sidebar.radio if element.key == "run"
+    ]
+    assert len(picker) == 1
+    offered = picker[0].options
     assert len(offered) == len(saved["scenarios"])
     names = {run["name"] for run in saved["scenarios"].values()}
     assert set(offered) == names

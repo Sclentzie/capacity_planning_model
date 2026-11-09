@@ -40,6 +40,7 @@ scenario:
   name: "Central records hub"
   starts_week: 13
   what_it_changes: "All non-digital records at one hub; one pooled records team, items delivered to the requesting site"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   scenario:

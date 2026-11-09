@@ -20,6 +20,7 @@ scenario:
   name: "Monday part-time"
   starts_week: 1
   what_it_changes: "2% of Onsite Associate paid hours move to Monday/Tuesday part-timers"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   scenario:

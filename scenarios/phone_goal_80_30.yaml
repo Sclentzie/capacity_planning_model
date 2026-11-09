@@ -18,6 +18,7 @@ scenario:
   name: "Phone goal 80/30"
   starts_week: 1
   what_it_changes: "Phones answered 80% within 30 seconds instead of 20"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   live_queues:

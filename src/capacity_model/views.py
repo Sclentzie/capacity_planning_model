@@ -21,7 +21,7 @@ import math
 
 import pandas as pd
 
-from . import api, export
+from . import api, export, scenarios
 
 BASELINE_KEY = "baseline"
 BASELINE_LABEL = "Baseline"
@@ -117,24 +117,19 @@ def findings():
     return dict(export.HEADLINES)
 
 
-def sensitivity_base(key, keys):
-    """The run this one varies, when it varies exactly one input of it.
+# What each kind is called on screen, derived from the model's own three
+# so a kind added to the YAML cannot go unnamed here.
+KIND_LABELS = {kind: kind.capitalize() for kind in scenarios.KINDS}
 
-    Derived from the keys, not declared: a run whose key is another run's
-    key plus a suffix is a variant of it, and the longest such match is
-    its parent. The two the spec calls sensitivities in so many words -
-    the 0.5% true error rate and the 2-hour borrow minimum - come out of
-    this rule, along with the 50% automation and 100% AI variants.
 
-    NOTE for the architect: there is no sensitivity marker in the scenario
-    files, so this is inferred from naming. If the grouping should be
-    declared rather than inferred, it wants a field in the scenario
-    identity block.
+def kind_label(kind):
+    """'Risk', 'Sensitivity', 'Choice' - the run's own declared kind.
+
+    Declared in the scenario file (11/09), not worked out here. This used
+    to be inferred from the scenario keys, which was a guess about file
+    naming doing the work of a fact about the run.
     """
-    bases = [
-        other for other in keys if other != key and key.startswith(other + "_")
-    ]
-    return max(bases, key=len) if bases else None
+    return KIND_LABELS.get(kind, kind)
 
 
 def scenario_menu(results):
@@ -146,22 +141,18 @@ def scenario_menu(results):
     for the run it varies - a sensitivity read as a scenario in its own
     right is how "AI pays back" gets quoted from the 50% run.
     """
-    scenarios = results["scenarios"]
+    runs = results["scenarios"]
     finding_of = findings()
-    key_of_name = {run["name"]: key for key, run in scenarios.items()}
-    keys = set(scenarios)
+    key_of_name = {run["name"]: key for key, run in runs.items()}
 
     def item(key):
-        run = scenarios[key]
-        base = sensitivity_base(key, keys)
-        label = run["name"]
-        if base is not None:
-            label = f"{run['name']} (sensitivity of {scenarios[base]['name']})"
+        run = runs[key]
         return {
             "key": key,
             "name": run["name"],
-            "label": label,
-            "sensitivity_of": base,
+            "label": run["name"],
+            "kind": run["kind"],
+            "kind_label": kind_label(run["kind"]),
             "finding": finding_of.get(run["name"]),
             "what_it_changes": run["what_it_changes"],
             "starts_week": run["starts_week"],
@@ -174,12 +165,12 @@ def scenario_menu(results):
     ]
     taken = set(headline_keys) | {BASELINE_KEY}
     others = sorted(
-        (key for key in scenarios if key not in taken),
-        key=lambda key: scenarios[key]["name"],
+        (key for key in runs if key not in taken),
+        key=lambda key: runs[key]["name"],
     )
 
     groups = []
-    if BASELINE_KEY in scenarios:
+    if BASELINE_KEY in runs:
         groups.append((BASELINE_GROUP, [item(BASELINE_KEY)]))
     groups.append((HEADLINE_GROUP, [item(key) for key in headline_keys]))
     groups.append((OTHER_GROUP, [item(key) for key in others]))
@@ -231,6 +222,68 @@ def headline_cards(results, key):
             }
         )
     return cards
+
+
+# ---------------------------------------------------------------------------
+# Compare all scenarios (the second view, 11/09)
+# ---------------------------------------------------------------------------
+
+KIND_HEADER = "Kind"
+ALL_IN_HEADER = "All-in cost"
+DIFFERENCE_HEADER = "All-in vs baseline"
+
+# The Capacity Scenarios tab's own number format per column, so this
+# table is rounded exactly where the workbook rounds. It carries the
+# difference column too, which the cards do not.
+SCENARIO_FORMATS = {
+    header: number_format
+    for header, _source, number_format, _width in export.SCENARIO_COLUMNS
+}
+
+
+def comparison_table(results):
+    """Every run, ranked by what it does to the all-in cost.
+
+    RANKED, not alphabetical, and that is the difference between this and
+    the workbook's Capacity Scenarios tab. The tab is deliberately
+    neutral - alphabetical, because ranking a reference table smuggles in
+    an opinion. A browse view is where the opinion belongs: a reader
+    opening "compare all" is asking which runs save money, and the answer
+    should be the first row rather than something to be found by eye.
+
+    The kind is shown beside the name because the ranking puts a risk and
+    a proposal next to each other, and they are not the same claim: the
+    cheapest row might be something nobody is proposing to do.
+    """
+    comparison = results["comparison"]
+    baseline = comparison[comparison["scenario"] == BASELINE_LABEL]
+    if baseline.empty:
+        raise ValueError(
+            "the comparison table has no Baseline row to rank against"
+        )
+    baseline_cost = float(baseline["total_cost"].iloc[0])
+
+    table = api.comparison_view(comparison)
+    table.insert(1, KIND_HEADER, [kind_label(kind) for kind in comparison["kind"]])
+    position = list(table.columns).index(ALL_IN_HEADER) + 1
+    table.insert(
+        position,
+        DIFFERENCE_HEADER,
+        comparison["total_cost"].astype(float) - baseline_cost,
+    )
+    return table.sort_values(DIFFERENCE_HEADER).reset_index(drop=True)
+
+
+def comparison_display(table):
+    """The same table, rounded the way the workbook's tab prints it."""
+    rounded = table.copy()
+    for header in rounded.columns:
+        decimals = DISPLAY_DECIMALS.get(SCENARIO_FORMATS.get(header))
+        if decimals is None:
+            continue
+        if pd.api.types.is_numeric_dtype(rounded[header]):
+            rounded[header] = rounded[header].round(decimals)
+    return rounded
 
 
 # ---------------------------------------------------------------------------

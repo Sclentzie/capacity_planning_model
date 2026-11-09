@@ -25,6 +25,7 @@ scenario:
   name: "After PoC, true rate 0.5%"
   starts_week: 27
   what_it_changes: "Same gate, with the automation's true error rate sitting on the 0.5% target instead of under it"
+  kind: sensitivity                   # varies one input of another run, to test whether its finding holds
 
 overrides:
   scenario:

@@ -16,6 +16,7 @@ scenario:
   name: "Monday ideal match"
   starts_week: 1
   what_it_changes: "Onsite Associate daily hours follow the day-of-week pattern exactly"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   scenario:

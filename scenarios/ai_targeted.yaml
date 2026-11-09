@@ -60,6 +60,7 @@ scenario:
   name: "AI targeted"
   starts_week: 13
   what_it_changes: "Automation only on the two work types that pay back after fixed costs; deflection off"
+  kind: choice                        # something the operation could decide to do
 
 overrides:
   automation:

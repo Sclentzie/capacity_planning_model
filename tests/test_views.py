@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from capacity_model import api, export, views
+from capacity_model import api, export, scenarios, views
 
 APP = Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
 
@@ -59,6 +59,34 @@ def app_test():
     if str(APP.parents[1] / "src") not in sys.path:
         sys.path.insert(0, str(APP.parents[1] / "src"))
     return AppTest.from_file(str(APP), default_timeout=300)
+
+
+def widget(app, kind, key):
+    """One widget by its key, never by its position.
+
+    The second view was added above the run picker and every index-based
+    lookup in these tests moved by one - which is a thing a test should
+    not be able to notice.
+    """
+    found = [element for element in getattr(app, kind) if element.key == key]
+    assert len(found) == 1, f"{kind} {key!r}: {len(found)} found"
+    return found[0]
+
+
+def run_picker(app):
+    return widget(app, "radio", "run")
+
+
+def view_picker(app):
+    return widget(app, "radio", "view")
+
+
+def scope_picker(app):
+    return widget(app, "selectbox", "scope")
+
+
+def role_picker(app):
+    return widget(app, "multiselect", "roles")
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +150,7 @@ def test_the_page_renders_the_same_figures_it_was_handed(
     assert not app.exception
 
     for key, run in results["scenarios"].items():
-        app.sidebar.radio[0].set_value(key).run()
+        run_picker(app).set_value(key).run()
         assert not app.exception, run["name"]
         rendered = {card.label: (card.value, card.delta) for card in app.metric}
         for card in views.headline_cards(results, key):
@@ -177,28 +205,128 @@ def test_every_headline_run_shows_its_approved_finding(results):
             assert entry["finding"] is None
 
 
-def test_a_sensitivity_is_marked_for_the_run_it_varies(results):
-    """The two the spec calls sensitivities in so many words.
+def test_the_menu_shows_each_run_s_declared_kind(results):
+    """Declared in the scenario file (11/09), not inferred here.
 
-    Spec 7: the site shortfall is run at a 4-hour borrow minimum "and
-    again at 2 hours as a sensitivity", and the proof-of-concept gate has
-    "a sensitivity run at a true rate of 0.5%". Both are marked for their
-    parent run, so neither can be read as a scenario in its own right.
+    The marking used to be worked out from the scenario keys - a run
+    whose key was another run's key plus a suffix was taken to be a
+    variant of it. That is a guess about file naming standing in for a
+    fact about the run, and it had nothing to say about a risk at all.
     """
     marked = {
-        entry["key"]: entry["sensitivity_of"]
+        entry["key"]: (entry["kind"], entry["kind_label"])
         for entry in views.menu_items(results)
     }
-    assert marked["site_shortfall_n1_borrow_2h"] == "site_shortfall_n1"
-    assert marked["after_proof_of_concept_true_05"] == "after_proof_of_concept"
-    assert marked[views.BASELINE_KEY] is None
-    assert marked["volume_plus_15"] is None
+    assert marked["site_shortfall_n1_borrow_2h"] == ("sensitivity", "Sensitivity")
+    assert marked["after_proof_of_concept_true_05"] == ("sensitivity", "Sensitivity")
+    assert marked["volume_plus_15"] == ("risk", "Risk")
+    assert marked["attrition_doubles"] == ("risk", "Risk")
+    assert marked[views.BASELINE_KEY] == ("choice", "Choice")
 
 
-def test_a_run_is_not_marked_as_a_sensitivity_of_itself(results):
-    keys = set(results["scenarios"])
-    for key in keys:
-        assert views.sensitivity_base(key, keys) != key
+def test_every_kind_the_model_allows_has_a_name_on_screen(results):
+    """A kind added to the YAML cannot reach the page unnamed."""
+    for kind in scenarios.KINDS:
+        assert views.kind_label(kind) == kind.capitalize()
+    for run in results["scenarios"].values():
+        assert run["kind"] in scenarios.KINDS
+
+
+# ---------------------------------------------------------------------------
+# Compare all scenarios (the second view)
+# ---------------------------------------------------------------------------
+
+
+def test_the_comparison_view_ties_to_the_comparison_table(
+    results, comparison_rows
+):
+    """THE TIE-OUT, again, for the ranked table (11/09 item 2).
+
+    Every measure of every run against the row the workbook's tab is
+    built from, to the cent - including the ranking column, which is the
+    one figure this view computes rather than reads, and so the one that
+    could drift.
+    """
+    table = views.comparison_table(results)
+    assert len(table) == len(results["scenarios"])
+
+    baseline_cost = float(comparison_rows["Baseline"]["total_cost"])
+    headers = {key: header for header, key in api.COMPARISON_MEASURES}
+    for _index, shown in table.iterrows():
+        row = comparison_rows[shown["Scenario"]]
+        for measure, header in headers.items():
+            if measure == "scenario":
+                continue
+            assert shown[header] == pytest.approx(
+                float(row[measure]), abs=A_CENT
+            ), f"{shown['Scenario']}: {header}"
+        assert shown[views.DIFFERENCE_HEADER] == pytest.approx(
+            float(row["total_cost"]) - baseline_cost, abs=A_CENT
+        ), shown["Scenario"]
+
+
+def test_the_comparison_view_is_ranked_by_what_it_costs(results):
+    """Biggest saving first, baseline at zero, most expensive last."""
+    table = views.comparison_table(results)
+    differences = list(table[views.DIFFERENCE_HEADER])
+    assert differences == sorted(differences)
+    assert differences[0] < 0 < differences[-1]
+
+    baseline_at = list(table["Scenario"]).index("Baseline")
+    assert table[views.DIFFERENCE_HEADER].iloc[baseline_at] == 0.0
+    # The known shape of the answer: pooling the phones is the saving,
+    # the volume rise is the risk.
+    assert table["Scenario"].iloc[0] == "Centralized phones"
+    assert table["Scenario"].iloc[-1] == "Combined, AI 100%"
+
+
+def test_the_comparison_view_shows_each_run_s_kind(results):
+    """A ranking puts a risk and a proposal side by side."""
+    table = views.comparison_table(results)
+    kind_of = dict(zip(table["Scenario"], table[views.KIND_HEADER]))
+    assert kind_of["Volume +15%"] == "Risk"
+    assert kind_of["Centralized phones"] == "Choice"
+    assert kind_of["AI and automation, 50%"] == "Sensitivity"
+    assert set(table[views.KIND_HEADER]) <= {
+        views.kind_label(kind) for kind in scenarios.KINDS
+    }
+
+
+def test_the_comparison_view_carries_the_workbook_s_headers(results):
+    """Named as the tab names them, with the two this view adds."""
+    table = views.comparison_table(results)
+    expected = [header for header, _key in api.COMPARISON_MEASURES]
+    for header in expected:
+        assert header in table.columns
+    assert list(table.columns)[:4] == [
+        "Scenario", views.KIND_HEADER, views.ALL_IN_HEADER,
+        views.DIFFERENCE_HEADER,
+    ]
+
+
+def test_the_comparison_view_rounds_only_for_the_screen(results):
+    table = views.comparison_table(results)
+    shown = views.comparison_display(table)
+    assert shown[views.ALL_IN_HEADER].equals(table[views.ALL_IN_HEADER].round(0))
+    assert list(shown["Scenario"]) == list(table["Scenario"])
+    assert list(shown[views.KIND_HEADER]) == list(table[views.KIND_HEADER])
+
+
+def test_the_page_offers_both_views_and_renders_the_comparison(results):
+    """The second view, through the real app."""
+    app = app_test().run()
+    views_offered = view_picker(app).options
+    assert set(views_offered) == {"One run", "Compare all scenarios"}
+
+    view_picker(app).set_value("Compare all scenarios").run()
+    assert not app.exception
+    shown = app.dataframe[0].value
+    assert len(shown) == len(results["scenarios"])
+    assert list(shown["Scenario"]) == list(
+        views.comparison_table(results)["Scenario"]
+    )
+    # The banner is on this view too: a screenshot of either travels.
+    assert results["meta"]["label"] in [banner.value for banner in app.warning]
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +568,7 @@ def test_the_page_says_it_is_synthetic(results):
 
 def test_the_page_shows_the_approved_finding_for_a_headline_run():
     app = app_test().run()
-    app.sidebar.radio[0].set_value("central_phones").run()
+    run_picker(app).set_value("central_phones").run()
     assert not app.exception
     approved = dict(export.HEADLINES)["Centralized phones"]
     assert approved in [note.value for note in app.info]
@@ -453,9 +581,9 @@ def test_the_page_drops_the_back_office_roles_in_a_site_view(dimensions):
         choice for choice in views.scope_choices(dimensions)
         if choice["code"] == "N1"
     )
-    app.sidebar.selectbox[0].set_value(site["label"]).run()
+    scope_picker(app).set_value(site["label"]).run()
     assert not app.exception
-    offered = set(app.sidebar.multiselect[0].options)
+    offered = set(role_picker(app).options)
     network = {role["name"] for role in views.network_roles(dimensions)}
     assert offered.isdisjoint(network)
     assert any(
@@ -473,7 +601,7 @@ def test_the_page_lists_the_filtered_plan_rows(dimensions):
         choice for choice in views.scope_choices(dimensions)
         if choice["code"] == "N1"
     )
-    app.sidebar.selectbox[0].set_value(site["label"]).run()
+    scope_picker(app).set_value(site["label"]).run()
     filtered = app.dataframe[0].value
     assert set(filtered["Site or scope"]) == {"N1"}
     assert len(filtered) < len(whole)

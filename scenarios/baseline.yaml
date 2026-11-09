@@ -10,5 +10,6 @@ scenario:
   name: "Baseline"
   starts_week: 1
   what_it_changes: "Nothing; phones answered per site; 2 Records Specialists at every site"
+  kind: choice                        # something the operation could decide to do
 
 overrides: {}
