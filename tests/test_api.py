@@ -492,17 +492,24 @@ def test_rebuilding_the_file_twice_gives_the_same_bytes(fresh, baseline_assumpti
     assert first == second
 
 
-def test_the_dashboard_renders_the_saved_comparison_table(saved):
+def test_the_dashboard_opens_the_saved_results_file(saved):
     """Task 7a's whole purpose: prove the pieces connect.
 
     Streamlit's own AppTest runs the app script headlessly, so this is the
     real app loading the real committed file rather than a mock of either.
     It reads a file and runs no model, so it costs a second.
 
-    What it would catch: a renamed column, a results file the app cannot
-    open, a path shim that works from the repository root and nowhere
+    What it would catch: a results file the app cannot open, a run missing
+    from it, a path shim that works from the repository root and nowhere
     else. All three would leave the model's tests green and the dashboard
     blank.
+
+    It asserts on the FILE reaching the page, not on the page's layout.
+    The first version of this test compared the first table on screen
+    against the comparison table, and 7b broke it by putting a different
+    table there first - a test that failed for a change that was correct.
+    What the saved file turns into on screen is tests/test_views.py's
+    job.
     """
     from streamlit.testing.v1 import AppTest
 
@@ -511,11 +518,11 @@ def test_the_dashboard_renders_the_saved_comparison_table(saved):
     ).run()
     assert not app.exception, app.exception
 
-    pd.testing.assert_frame_equal(
-        app.dataframe[0].value,
-        api.comparison_view(saved["comparison"]),
-        check_dtype=False,
-    )
+    offered = app.sidebar.radio[0].options
+    assert len(offered) == len(saved["scenarios"])
+    names = {run["name"] for run in saved["scenarios"].values()}
+    assert set(offered) == names
+
     # The synthetic statement is ON the page. A screenshot of a dashboard
     # travels further than the repository it came from.
     assert any("SYNTHETIC" in warning.value for warning in app.warning)

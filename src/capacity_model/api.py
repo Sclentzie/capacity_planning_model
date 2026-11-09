@@ -263,6 +263,63 @@ def cost_lines_table(built, assumptions=None):
 
 
 # ---------------------------------------------------------------------------
+# What a reader can filter by
+# ---------------------------------------------------------------------------
+
+# Two scopes a role can be planned at, named here so the dashboard and the
+# tests use the same words the spec does (6.7: scope, not site).
+SITE_SCOPE = "site"
+NETWORK_SCOPE = "network"
+
+
+def dimensions(sites=None, skills=None, assumptions=None):
+    """The clusters, sites and roles a reader can filter by.
+
+    Reference data, not figures: the saved results carry scope codes like
+    "N1" and role codes like "qa_specialist", and this is where they get
+    the names sites.yaml and skills.yaml already give them. It comes
+    through the doorway so the dashboard never reads a YAML file itself
+    and cannot start naming things its own way.
+
+    The site-or-network split is read from supply.per_site_roles rather
+    than listed here, because it is the model's own rule about which
+    roles stand at a counter and which are one network pool (spec 4.4).
+    A back-office role has no site, and a view that showed it as zero at
+    every site would be reporting an absence as a measurement.
+    """
+    assumptions = assumptions or config.load_assumptions()
+    sites = sites if sites is not None else config.load_sites()
+    skills = skills if skills is not None else config.load_skills()
+
+    per_site = set(assumptions["supply"]["per_site_roles"])
+    roles = [
+        {
+            "code": role["code"],
+            "name": role["name"],
+            "pool": role["pool"],
+            "scope": SITE_SCOPE if role["code"] in per_site else NETWORK_SCOPE,
+        }
+        for role in skills["roles"]
+    ]
+    return {
+        "clusters": [
+            {
+                "code": cluster["code"],
+                "name": cluster["name"],
+                "sites": list(cluster["sites"]),
+            }
+            for cluster in sites["clusters"]
+        ],
+        "sites": [
+            {"code": site["code"], "name": site["name"], "cluster": site["cluster"]}
+            for site in sites["sites"]
+        ],
+        "roles": roles,
+        "network_code": assumptions["supply"]["network_scope"],
+    }
+
+
+# ---------------------------------------------------------------------------
 # The saved results the dashboard loads
 # ---------------------------------------------------------------------------
 
