@@ -16,6 +16,7 @@ pyyaml==6.0.3           # reads assumptions.yaml, sites.yaml, skills.yaml, scena
 openpyxl==3.1.5         # writes the Excel workbook outputs (spec 8)
 matplotlib==3.11.2      # charts of history, forecast, and gap over time
 pytest==9.1.1           # the validation checks in spec 9
+streamlit==1.67.0       # the dashboard (spec Section 8, framework decided 11/09)
 
 # --- pulled in by those, pinned too so a clean install reproduces the run ---
 # pandas
@@ -45,3 +46,9 @@ pluggy==1.7.0
 Pygments==2.21.0
 packaging==26.3
 colorama==0.4.6         # pytest's coloured output on Windows
+
+# Streamlit's own tree (altair, pyarrow, protobuf, tornado and friends) is
+# left to resolve rather than locked here. It RENDERS the numbers and does
+# not compute any of them, and the libraries that do are pinned above.
+# Streamlit asks for pandas<4, so it cannot pull the pinned pandas forward
+# underneath the model - checked before adding it.

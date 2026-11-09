@@ -61,29 +61,50 @@ def list_scenarios(assumptions=None):
     return baseline + [p for p in paths if p.stem != "baseline"]
 
 
-def load_scenario(path):
-    """Read one scenario file: its identity and its overrides.
+SCENARIO_FILE_KEYS = ("scenario", "overrides", "site_overrides")
 
-    The file is data, not code: it names inputs and values, and nothing in
-    it can reach the model except through the merge.
+
+def scenario_from_mapping(raw, key, label=None):
+    """Validate one scenario's data and shape it, wherever it came from.
+
+    A scenario file read off disk and a set of controls handed over by the
+    dashboard are the same thing: a block of identity and a block of
+    overrides. They are validated HERE, once, so a typed key and a typo in
+    a YAML file are refused for the same reasons and in the same words.
+    Two validators would eventually disagree about what is allowed, and the
+    one that was laxer would be the one a wrong number came through.
+
+    `raw` is data, not code: it names inputs and values, and nothing in it
+    can reach the model except through the merge.
     """
-    with open(path, "r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle) or {}
-
-    unknown = set(raw) - {"scenario", "overrides", "site_overrides"}
+    label = label or key
+    if not isinstance(raw, dict):
+        raise TypeError(
+            f"{label}: a scenario is a mapping of "
+            f"{list(SCENARIO_FILE_KEYS)}, not a {type(raw).__name__}"
+        )
+    unknown = set(raw) - set(SCENARIO_FILE_KEYS)
     if unknown:
         raise ValueError(
-            f"{path.name}: unexpected top-level keys {sorted(unknown)}; a "
+            f"{label}: unexpected top-level keys {sorted(unknown)}; a "
             "scenario file holds 'scenario', 'overrides' and 'site_overrides'"
         )
     header = raw.get("scenario") or {}
     missing = set(IDENTITY_KEYS) - set(header)
     if missing:
-        raise ValueError(f"{path.name}: the scenario block needs {sorted(missing)}")
+        raise ValueError(f"{label}: the scenario block needs {sorted(missing)}")
+    # The identity block is checked for strays too. `start_week` for
+    # `starts_week` would otherwise be accepted in silence and the run
+    # would quietly begin in plan week 1.
+    stray = set(header) - set(IDENTITY_KEYS)
+    if stray:
+        raise ValueError(
+            f"{label}: unexpected keys in the scenario block {sorted(stray)}; "
+            f"it holds {list(IDENTITY_KEYS)}"
+        )
 
     return {
-        "key": path.stem,
-        "path": path,
+        "key": key,
         "name": header["name"],
         "starts_week": int(header["starts_week"]),
         "what_it_changes": header["what_it_changes"],
@@ -94,6 +115,15 @@ def load_scenario(path):
         # fails the same way.
         "site_overrides": raw.get("site_overrides") or {},
     }
+
+
+def load_scenario(path):
+    """Read one scenario file: its identity and its overrides."""
+    with open(path, "r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    scenario = scenario_from_mapping(raw, path.stem, label=path.name)
+    scenario["path"] = path
+    return scenario
 
 
 def is_coded_list(value):

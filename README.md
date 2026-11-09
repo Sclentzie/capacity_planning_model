@@ -76,6 +76,13 @@ central records archive, coordinated digitization, and combinations. No scenario
 re-tunes its roster, so each one reports what the change costs the operation it
 actually has.
 
+**One doorway in.** The model sits behind a single inputs-in, results-out
+function — `capacity_model.api.run(overrides)` — which takes the same keys a
+scenario file uses and refuses any key the inputs do not carry, so a typo fails
+loudly instead of handing back the baseline. The workbook and the dashboard
+both read their figures through it, built by the same table functions, so the
+two cannot disagree about a number.
+
 **The workbook.** One Excel file a leader can open without Python, with the ten
 tabs the specification names: a curated Summary, all 21 scenarios, the plan and
 the supply ledger week by week, the automation ranking, the coverage log, the
@@ -107,8 +114,28 @@ Library versions are pinned exactly in `requirements.txt`. A fixed seed only
 reproduces the same answers on the same arithmetic, so the versions the checks
 were run on are part of the model, not an installation detail.
 
+### Run the dashboard
+
 ```powershell
-# The validation checks: 656 tests, about 45-50 minutes
+.venv\Scripts\python -m streamlit run app/dashboard.py
+```
+
+It opens in a browser and reads the saved results in
+`app/data/scenario_results_SYNTHETIC.json.gz` — all 21 runs, so the page loads
+in under a second instead of waiting out the model. That file is the one
+generated file this repository commits, because a hosted app cannot spend nine
+minutes before it shows anything. Rebuild it after changing any input:
+
+```powershell
+# Re-runs all 21 scenarios and rewrites the saved results (about nine minutes)
+.venv\Scripts\python -m capacity_model.api
+```
+
+A test re-runs the whole model and compares every cell of that file, so it
+cannot go stale without the suite saying so.
+
+```powershell
+# The validation checks: 675 tests, about 75 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -148,7 +175,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-656 tests across 21 files, all passing. Every validation check in the
+675 tests across 22 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference
@@ -234,6 +261,8 @@ Every input lives in YAML. No numbers are hard-coded in the logic.
 
 ```
 src/capacity_model/   the model, one module per area of the spec
+app/                  the Streamlit dashboard
+app/data/             saved scenario results — generated, and committed
 tests/                the validation checks
 docs/                 the specification
 data/synthetic/       generated data — regenerated, not committed

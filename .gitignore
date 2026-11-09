@@ -20,6 +20,14 @@ outputs/*
 data/synthetic/*
 !data/synthetic/.gitkeep
 
+# app/data IS committed, and is the one exception to the rule above.
+# The dashboard's saved results (spec Section 8, decided 11/09) are
+# generated, like everything in data/synthetic - but a hosted Streamlit app
+# cannot run 21 scenarios for nine minutes before it shows anything, so the
+# runs are saved and committed. tests/test_api.py re-runs the whole model
+# and compares every cell of that file, which is what keeps a committed
+# generated file honest.
+
 # OS and editor noise
 Thumbs.db
 .DS_Store

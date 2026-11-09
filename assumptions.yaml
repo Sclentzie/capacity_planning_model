@@ -60,6 +60,13 @@ paths:
   # workbook is the one output that gets forwarded by email with its
   # provenance stripped off.
   workbook_xlsx: "capacity_model_workbook_SYNTHETIC.xlsx"
+  # The dashboard's saved results (spec Section 8, decided 11/09). The only
+  # generated file this repository COMMITS, and deliberately so: a hosted
+  # Streamlit app cannot spend eight minutes running 21 scenarios before it
+  # shows anything. A test re-runs the model and compares every cell, so it
+  # cannot go stale in silence.
+  app_data_dir: "app/data"
+  scenario_results_json: "scenario_results_SYNTHETIC.json.gz"
 
 # ---------------------------------------------------------------------
 # SCENARIO (spec Section 7)
