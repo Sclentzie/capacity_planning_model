@@ -17,6 +17,8 @@ the right figures, grouped sensibly, labelled honestly. Spacing, colour
 and typography are 7d.
 """
 
+import functools
+import html
 import math
 
 import altair as alt
@@ -57,16 +59,18 @@ NO_CHANGE = "no change"
 
 # Which way is better, recorded once.
 #
-# Cost, overtime, uncovered hours, turnaround and weeks over goal are all
-# better lower. Required FTE is NEUTRAL on purpose: a scenario that needs
-# more people is not failing, it is being honest about the work, and
-# colouring that red would be a verdict the model never made.
+# ALL SIX MEASURES ARE BETTER LOWER (decided 11/16). Required FTE used to
+# be neutral here, on the reasoning that a scenario needing more people
+# is not failing, only honest about the work. Siri's call is that a
+# planner reads required FTE the same way they read cost - fewer is
+# better, more is worse - and that a card alone among six with no colour
+# reads as a measure nobody has an opinion about, which is its own claim.
+# The run's finding is where the nuance belongs; a card is a direction.
 BETTER_LOWER = "lower"
-NEUTRAL = "neutral"
 
 CARD_MEASURES = (
     ("total_cost", export.MONEY, BETTER_LOWER),
-    ("network_required_fte", export.FTE, NEUTRAL),
+    ("network_required_fte", export.FTE, BETTER_LOWER),
     ("overtime_hours", export.HOURS, BETTER_LOWER),
     ("uncovered_hours", export.HOURS, BETTER_LOWER),
     ("mean_projected_turnaround_days", export.DAYS, BETTER_LOWER),
@@ -88,11 +92,29 @@ def format_value(value, number_format):
     return formatter(value) if formatter else str(value)
 
 
+def rounds_to_nothing(difference, number_format):
+    """True when a difference disappears at the precision shown.
+
+    ONE RULE FOR EVERY CARD (decided 11/16). A difference of four tenths
+    of a person against a card that prints two decimals is not "+0.00
+    with an up arrow" - it is a rounding artefact wearing a verdict. If
+    the figure on the card would read as zero, the card says so in words
+    instead, and the exact difference stays one hover away, so nothing
+    is hidden by being rounded.
+    """
+    if difference is None:
+        return False
+    decimals = DISPLAY_DECIMALS.get(number_format)
+    if decimals is None:
+        return abs(difference) < 1e-9
+    return round(difference, decimals) == 0
+
+
 def format_difference(difference, number_format):
     """A difference, signed, or the words for no difference at all."""
     if difference is None:
         return ""
-    if abs(difference) < 1e-9:
+    if rounds_to_nothing(difference, number_format):
         return NO_CHANGE
     sign = "+" if difference > 0 else "-"
     return sign + format_value(abs(difference), number_format)
@@ -218,11 +240,127 @@ def headline_cards(results, key):
                 "value_text": format_value(value, number_format),
                 "difference": difference,
                 "difference_text": format_difference(difference, number_format),
+                "no_change": rounds_to_nothing(difference, number_format),
                 "direction": direction,
                 "format": number_format,
             }
         )
     return cards
+
+
+# ---------------------------------------------------------------------------
+# What a card looks like (decided 11/16, after the second walkthrough)
+#
+# WHY THESE CARDS ARE NOT st.metric. st.metric can colour a difference
+# green or red, or turn the colour off - and that is the whole palette.
+# It has no way to say "this measure did not move", which is a third
+# thing a card has to be able to say and the one a reader most often
+# misreads: "+0.00" with an up arrow is a rounding artefact wearing a
+# verdict. So the six cards are drawn here, in the same layout st.metric
+# used, with a third colour for no change at all.
+# ---------------------------------------------------------------------------
+
+# Streamlit's own three, so a card looks like the rest of the page.
+BETTER_COLOUR = "#09ab3b"   # green: moved the way a planner wants
+WORSE_COLOUR = "#ff2b2b"    # red:   moved the other way
+SAME_COLOUR = "#0068c9"     # blue:  did not move at all
+
+DOWN_ARROW = "▼"
+UP_ARROW = "▲"
+
+CARD_STYLE = """<style>
+.cm-card { padding: 0.25rem 0 0.75rem 0; }
+.cm-card-label { font-size: 0.875rem; line-height: 1.4; opacity: 0.65; }
+.cm-card-value { font-size: 2.25rem; font-weight: 600; line-height: 1.25; }
+.cm-card-delta { font-size: 0.875rem; line-height: 1.4; }
+.cm-card-delta-blank { visibility: hidden; }
+</style>"""
+
+
+def card_colour(card):
+    """Green, red or blue - the one rule every card follows.
+
+    Blue first, because "did not move" is a different statement from
+    "moved a little the wrong way" and the rounding must not turn one
+    into the other. Then the direction: all six measures are better
+    lower (11/16), so down is green and up is red.
+    """
+    if card["difference"] is None:
+        return None
+    if card["no_change"]:
+        return SAME_COLOUR
+    better = card["difference"] < 0 if card["direction"] == BETTER_LOWER else (
+        card["difference"] > 0
+    )
+    return BETTER_COLOUR if better else WORSE_COLOUR
+
+
+def card_arrow(card):
+    """Which way the figure moved, or nothing when it did not move.
+
+    No arrow on a no-change card: an arrow is a claim about direction,
+    and a difference that rounds away has no direction to report.
+    """
+    if card["difference"] is None or card["no_change"]:
+        return ""
+    return UP_ARROW if card["difference"] > 0 else DOWN_ARROW
+
+
+def exact_difference_text(difference):
+    """The difference as it actually is, for the hover.
+
+    The card rounds; this does not. Trailing zeros are trimmed so a
+    difference of exactly two people reads as 2 rather than 2.000000.
+    """
+    if difference is None:
+        return ""
+    written = f"{difference:+,.6f}"
+    if "." in written:
+        written = written.rstrip("0").rstrip(".")
+    return written
+
+
+def card_tooltip(card):
+    """What the hover says: the exact difference, always.
+
+    Nothing a card rounds away is lost - a reader who wants to know
+    whether "no change" means nothing moved or merely nothing that shows
+    can find out without leaving the page.
+    """
+    if card["difference"] is None:
+        return f"{card['label']}: this is the baseline, so there is nothing to compare it against."
+    exact = exact_difference_text(card["difference"])
+    if card["no_change"]:
+        return (
+            f"{card['label']}: {exact} against the baseline, which rounds "
+            f"to nothing at the precision shown."
+        )
+    return f"{card['label']}: {exact} against the baseline."
+
+
+def card_html(card):
+    """One card, in the layout st.metric drew.
+
+    Built as a string here rather than in the page so a test can read a
+    card's colour without starting one.
+    """
+    colour = card_colour(card)
+    delta = card["difference_text"]
+    if delta:
+        arrow = card_arrow(card)
+        shown = f"{arrow} {delta}" if arrow else delta
+        line = f'<div class="cm-card-delta" style="color: {colour};">{html.escape(shown)}</div>'
+    else:
+        # The baseline has nothing to compare against. The line is still
+        # drawn, invisibly, so six cards keep one height and a row does
+        # not jump when the run changes.
+        line = '<div class="cm-card-delta cm-card-delta-blank">&nbsp;</div>'
+    return (
+        f'<div class="cm-card" title="{html.escape(card_tooltip(card))}">'
+        f'<div class="cm-card-label">{html.escape(card["label"])}</div>'
+        f'<div class="cm-card-value">{html.escape(card["value_text"])}</div>'
+        f"{line}</div>"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -626,13 +764,41 @@ def plan_view(plan):
     return pd.DataFrame(columns)
 
 
-def plan_display(view):
-    """The same table, rounded to the precision the workbook prints.
+ROLE_HEADER = "Role"
 
-    A copy for the screen only. The download gets the exact figures,
-    because a CSV is something a reader does arithmetic on.
+
+@functools.lru_cache(maxsize=1)
+def role_short_names():
+    """Role code -> the short name skills.yaml gives it.
+
+    Cached because it reads the YAML and the answer cannot change while
+    the page is open. The names come through the doorway like every
+    other piece of reference data, so the page never reads a file itself
+    and cannot start naming a role its own way.
+    """
+    return {role["code"]: role["short_name"] for role in api.dimensions()["roles"]}
+
+
+def plan_display(view, names=None):
+    """The same table, rounded and named for a reader (11/16).
+
+    A copy for the screen only, and two things are done to it. The
+    figures are rounded to the precision the workbook prints. The role
+    is written as a person would say it - "Tier 1", not "tier_1" -
+    because a code name on a page is the model talking to itself in
+    front of a reader.
+
+    THE DOWNLOAD IS NOT TOUCHED. It keeps the codes, because a
+    downloaded row has to match a workbook row, and because the code is
+    what a reader would filter or join on. A short name is a thing done
+    to a screen.
     """
     rounded = view.copy()
+    if ROLE_HEADER in rounded.columns:
+        names = role_short_names() if names is None else names
+        rounded[ROLE_HEADER] = rounded[ROLE_HEADER].map(
+            lambda code: names.get(code, code)
+        )
     decimals_of = {
         header: DISPLAY_DECIMALS.get(number_format)
         for header, _source, number_format, _width, _total in (
@@ -677,8 +843,8 @@ PLAN_COLUMNS = (
         "Role",
         "Role",
         148,
-        "Role, by the model's own code - the same code the workbook and "
-        "the CSV carry, so a row here can be matched to a row there.",
+        "Role, by its short name. The download carries the model's own "
+        "code instead, so a downloaded row still matches a workbook row.",
     ),
     (
         "Site or scope",
@@ -764,6 +930,26 @@ PLAN_NUMBER_FORMATS = {
 TEXT_COLUMN = "text"
 
 
+def full_names_note():
+    """'Tier 1 is Remote Fulfillment Specialist, Tier 1', and so on.
+
+    Only the roles whose short name is not already the whole name, so
+    the tooltip does not solemnly explain that QA Specialist is called
+    QA Specialist.
+    """
+    shortened = [
+        role
+        for role in api.dimensions()["roles"]
+        if role["short_name"] != role["name"]
+    ]
+    if not shortened:
+        return ""
+    said = "; ".join(
+        f"{role['short_name']} is {role['name']}" for role in shortened
+    )
+    return f"In full: {said}."
+
+
 def plan_column_specs():
     """One spec per Capacity Plan column, as plain data.
 
@@ -782,6 +968,12 @@ def plan_column_specs():
     specs = []
     for header, short, width, note in PLAN_COLUMNS:
         number_format = kind_of[header]
+        if header == ROLE_HEADER:
+            # The full name on hover, for the two roles whose full name
+            # does not fit a column. Built from the names themselves, so
+            # a role renamed in skills.yaml cannot leave a stale sentence
+            # behind here.
+            note = f"{note} {full_names_note()}"
         specs.append(
             {
                 "column": header,

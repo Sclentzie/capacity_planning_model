@@ -39,12 +39,6 @@ from capacity_model import api, views  # noqa: E402  (after the path is set)
 
 TITLE = "Northbrook Records Services - capacity model (SYNTHETIC)"
 
-# st.metric colours a rise green and a fall red by default. For cost,
-# overtime, uncovered hours and turnaround that is backwards, and for
-# required FTE it is a verdict the model has not made - so the direction
-# recorded in views decides, in one place, rather than per card.
-DELTA_COLOURS = {views.BETTER_LOWER: "inverse", views.NEUTRAL: "off"}
-
 CARDS_PER_ROW = 3
 
 # Widget keys, so a test can ask for the run picker by name rather than
@@ -196,18 +190,21 @@ def show_cards(results, key):
     st.caption(
         "Network-wide, as the workbook's Summary reports them. The filters "
         "in the sidebar apply to the chart and the table below, not to "
-        "these cards."
+        "these cards. Green moved the way a planner wants, red the other "
+        "way, blue did not move at all - and a difference that rounds to "
+        "nothing at the precision shown says so in words rather than "
+        "wearing an arrow. Hover a card for the exact difference."
     )
     cards = views.headline_cards(results, key)
+    st.markdown(views.CARD_STYLE, unsafe_allow_html=True)
     for start in range(0, len(cards), CARDS_PER_ROW):
         row = cards[start:start + CARDS_PER_ROW]
         for column, card in zip(st.columns(len(row)), row):
-            column.metric(
-                card["label"],
-                card["value_text"],
-                delta=card["difference_text"] or None,
-                delta_color=DELTA_COLOURS.get(card["direction"], "normal"),
-            )
+            # Drawn rather than st.metric, which has green, red and off
+            # and no way to say "this did not move" - the third thing a
+            # card has to be able to say. Hover a card for the exact
+            # difference, which the card itself rounds.
+            column.markdown(views.card_html(card), unsafe_allow_html=True)
 
 
 def show_charts(results, key, choice, roles):

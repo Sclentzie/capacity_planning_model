@@ -14,8 +14,10 @@ run of the model is tests/test_api.py's job, and it re-runs the whole
 model to prove it - so nothing here needs eight minutes.
 """
 
+import html
 import io
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -138,6 +140,35 @@ def test_every_scenario_s_cards_tie_to_the_comparison_table(
             ), f"{run['name']}: {card['label']} difference"
 
 
+CARD_LABEL = re.compile(r'<div class="cm-card-label">(.*?)</div>')
+CARD_VALUE = re.compile(r'<div class="cm-card-value">(.*?)</div>')
+CARD_DELTA = re.compile(r'<div class="cm-card-delta"[^>]*>(.*?)</div>')
+
+
+def rendered_cards(app):
+    """The cards as the page sends them: label -> (value, difference).
+
+    The arrow is stripped back off, because it is drawn beside the
+    difference rather than being part of it, and this compares figures.
+    """
+    cards = {}
+    for element in app.main:
+        markup = str(getattr(element, "value", ""))
+        label = CARD_LABEL.search(markup)
+        value = CARD_VALUE.search(markup)
+        if not (label and value):
+            continue
+        delta = CARD_DELTA.search(markup)
+        written = html.unescape(delta.group(1)).strip() if delta else ""
+        for arrow in (views.UP_ARROW, views.DOWN_ARROW):
+            written = written.replace(arrow, "").strip()
+        cards[html.unescape(label.group(1))] = (
+            html.unescape(value.group(1)),
+            written,
+        )
+    return cards
+
+
 def test_the_page_renders_the_same_figures_it_was_handed(
     results, comparison_rows
 ):
@@ -146,6 +177,11 @@ def test_the_page_renders_the_same_figures_it_was_handed(
     The tie-out above checks the view layer. This checks the page: a
     label or a format could still go astray between the two, and a
     reader only ever sees the page.
+
+    It used to read app.metric. The cards are drawn by hand since
+    11/16, because st.metric cannot say "no change" in blue, so this
+    reads the markup the page sends instead - the same guarantee, one
+    layer closer to the screen.
     """
     app = app_test().run()
     assert not app.exception
@@ -153,7 +189,7 @@ def test_the_page_renders_the_same_figures_it_was_handed(
     for key, run in results["scenarios"].items():
         run_picker(app).set_value(key).run()
         assert not app.exception, run["name"]
-        rendered = {card.label: (card.value, card.delta) for card in app.metric}
+        rendered = rendered_cards(app)
         for card in views.headline_cards(results, key):
             value, delta = rendered[card["label"]]
             assert value == views.format_value(
@@ -709,25 +745,188 @@ def test_a_difference_is_signed_and_a_non_difference_says_so():
     assert views.format_difference(None, export.MONEY) == ""
 
 
-def test_required_fte_is_not_judged_better_or_worse():
-    """A scenario that needs more people is not failing.
+def test_every_measure_is_read_the_same_way(results):
+    """All six are better lower, required FTE among them (11/16).
 
-    It is reporting what the work asks for. Colouring that red would be a
-    verdict the model never made, so the direction is neutral and the
-    page shows the change without a judgement.
+    Required FTE used to be neutral, on the reasoning that a scenario
+    needing more people is being honest rather than failing. Siri's call
+    is that a planner reads it the way they read cost, and that one card
+    among six with no colour reads as a measure nobody has an opinion
+    about - which is its own claim, and not one the model is making.
     """
-    directions = {
-        measure: direction
-        for measure, _format, direction in views.CARD_MEASURES
-    }
-    assert directions["network_required_fte"] == views.NEUTRAL
-    assert directions["total_cost"] == views.BETTER_LOWER
-    assert directions["uncovered_hours"] == views.BETTER_LOWER
+    for _measure, _format, direction in views.CARD_MEASURES:
+        assert direction == views.BETTER_LOWER
+
+    # And the colour follows: fewer people than the baseline is green.
+    fewer = next(
+        card for card in views.headline_cards(results, "central_phones")
+        if card["measure"] == "network_required_fte"
+    )
+    assert fewer["difference"] < 0
+    assert views.card_colour(fewer) == views.BETTER_COLOUR
+
+    more = next(
+        card for card in views.headline_cards(results, "combined")
+        if card["measure"] == "network_required_fte"
+    )
+    assert more["difference"] > 0
+    assert views.card_colour(more) == views.WORSE_COLOUR
+
+
+def test_every_card_on_every_run_follows_the_colour_rule(results):
+    """One rule, stated here independently of the code that applies it.
+
+    Green moved the way a planner wants, red the other way, blue did not
+    move at all, and the baseline has nothing to compare against. Checked
+    on all six cards of all 21 runs, because a rule that holds for the
+    run someone looked at is not a rule.
+    """
+    for key in results["scenarios"]:
+        for card in views.headline_cards(results, key):
+            colour = views.card_colour(card)
+            difference = card["difference"]
+            where = f"{key}/{card['measure']}"
+
+            if difference is None:
+                assert key == views.BASELINE_KEY, where
+                assert colour is None, where
+                assert card["difference_text"] == "", where
+                continue
+
+            if round(difference, views.DISPLAY_DECIMALS[card["format"]]) == 0:
+                assert colour == views.SAME_COLOUR, where
+                assert card["difference_text"] == views.NO_CHANGE, where
+                # No arrow: an arrow is a claim about direction, and a
+                # difference that rounds away has none to report.
+                assert views.card_arrow(card) == "", where
+            elif difference < 0:
+                assert colour == views.BETTER_COLOUR, where
+                assert views.card_arrow(card) == views.DOWN_ARROW, where
+            else:
+                assert colour == views.WORSE_COLOUR, where
+                assert views.card_arrow(card) == views.UP_ARROW, where
+
+
+def test_a_difference_that_rounds_away_says_so_instead_of_showing_zero(results):
+    """The card the walkthrough caught: FTE on Wider lunch window.
+
+    It moved by four thousandths of a person. The card printed "0.00"
+    with an up arrow, which is a rounding artefact wearing a verdict -
+    a reader would take it as "this needs more people". It now says so
+    in words, in blue, with no arrow, and the exact figure is on the
+    hover so nothing is hidden by being rounded.
+    """
+    card = next(
+        card for card in views.headline_cards(results, "wider_lunch_window")
+        if card["measure"] == "network_required_fte"
+    )
+    # Genuinely not zero - this is a rounding case, not an identical run.
+    assert card["difference"] != 0
+    assert round(card["difference"], 2) == 0
+
+    assert card["no_change"] is True
+    assert card["difference_text"] == views.NO_CHANGE
+    assert views.card_colour(card) == views.SAME_COLOUR
+    assert views.card_arrow(card) == ""
+
+    # Nothing hidden: the hover carries the figure the card rounded.
+    tooltip = views.card_tooltip(card)
+    assert views.exact_difference_text(card["difference"]) in tooltip
+    assert "rounds to nothing" in tooltip
+
+    markup = views.card_html(card)
+    assert views.SAME_COLOUR in markup
+    assert views.NO_CHANGE in markup
+    assert views.UP_ARROW not in markup and views.DOWN_ARROW not in markup
+
+
+def test_the_rounding_rule_is_the_precision_the_card_shows(results):
+    """Each measure rounds at its own precision, not at a shared epsilon.
+
+    Half a cent is no change on a card that prints dollars; half a
+    person is not, on a card that prints hundredths.
+    """
+    assert views.rounds_to_nothing(0.4, export.MONEY) is True
+    assert views.rounds_to_nothing(0.6, export.MONEY) is False
+    assert views.rounds_to_nothing(0.004, export.FTE) is True
+    assert views.rounds_to_nothing(0.006, export.FTE) is False
+    assert views.rounds_to_nothing(None, export.FTE) is False
 
 
 # ---------------------------------------------------------------------------
 # The page itself
 # ---------------------------------------------------------------------------
+
+
+def rendered_text(app):
+    """Everything a reader can read on the page, as one block of text.
+
+    Labels, captions, headings, widget options and the table's own
+    cells. Widget options are the formatted labels Streamlit sends to
+    the browser, not the codes behind them, which is the point: this
+    looks at what is on the screen rather than at what the page knows.
+    """
+    chunks = []
+    for element in list(app.main) + list(app.sidebar):
+        for attribute in ("value", "label", "body", "help"):
+            found = getattr(element, attribute, None)
+            if isinstance(found, str):
+                chunks.append(found)
+            elif isinstance(found, pd.DataFrame):
+                chunks.append(found.to_string())
+        options = getattr(element, "options", None)
+        if options is not None:
+            chunks.extend(str(option) for option in options)
+    return "\n".join(chunks)
+
+
+def test_no_role_is_called_by_its_code_name_anywhere_on_the_page(results):
+    """A code name on a page is the model talking to itself in public.
+
+    "records_specialist" is how the model refers to a role internally.
+    A reader should see "Records Specialist", and "Tier 1" rather than
+    "tier_1", everywhere - the sidebar, the cards, the captions and the
+    table. The codes stay in the CSV, which is a different audience.
+    """
+    app = app_test().run()
+    assert not app.exception
+    on_screen = rendered_text(app)
+
+    codes = [role["code"] for role in api.dimensions()["roles"]]
+    assert codes, "no roles to check"
+    for code in codes:
+        assert code not in on_screen, code
+
+    # And the plain names really are there, rather than nothing at all.
+    for role in api.dimensions()["roles"]:
+        assert role["name"] in on_screen or role["short_name"] in on_screen
+
+
+def test_the_page_shows_a_no_change_card_in_blue(results):
+    """The rule, checked where a reader meets it.
+
+    Wider lunch window leaves required FTE alone to two decimals, so
+    its card has to reach the page saying so, in blue, with no arrow.
+    """
+    app = app_test()
+    app.run()
+    run_picker(app).set_value("wider_lunch_window").run()
+    assert not app.exception
+
+    cards = [
+        element.value for element in app.main
+        if type(element).__name__ == "Markdown"
+        and "cm-card-value" in str(element.value)
+    ]
+    blue = [markup for markup in cards if views.SAME_COLOUR in markup]
+    assert blue, "no card reached the page in blue"
+    assert all(views.NO_CHANGE in markup for markup in blue)
+    assert all(
+        views.UP_ARROW not in markup and views.DOWN_ARROW not in markup
+        for markup in blue
+    )
+    # The exact difference travels with the card, in its hover.
+    assert any("rounds to nothing" in markup for markup in blue)
 
 
 def test_the_page_says_it_is_synthetic(results):

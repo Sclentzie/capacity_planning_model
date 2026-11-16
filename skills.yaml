@@ -29,13 +29,21 @@ pools:
     based: "remote team"
     roles: [tier_1, tier_2, qa_specialist]
 
+# DISPLAY NAMES (added 11/16). `name` is what a role is called in full;
+# `short_name` is what it is called where the full name does not fit, such
+# as a column on a dashboard. Both are here rather than in the page code
+# because what a role is called is an input, and because a page that
+# invented its own abbreviations would be the second place a role is
+# named.
 roles:
   - code: onsite_associate
     name: "Onsite Associate"
+    short_name: "Onsite Associate"
     pool: onsite
     works: "Walk-in requesters, phones, site emails and portal messages"
   - code: records_specialist
     name: "Records Specialist"
+    short_name: "Records Specialist"
     pool: onsite
     works: "Non-digital retrieval, digitization, missing-record searches, certified copies"
     # spec Section 1: skills run ONE WAY. Records Specialists also hold the
@@ -44,14 +52,17 @@ roles:
     also_holds_skills_of: [onsite_associate]
   - code: tier_1
     name: "Remote Fulfillment Specialist, Tier 1"
+    short_name: "Tier 1"
     pool: remote
     works: "The request pipeline for Tier 1 request types"
   - code: tier_2
     name: "Remote Fulfillment Specialist, Tier 2"
+    short_name: "Tier 2"
     pool: remote
     works: "The request pipeline for Tier 2 request types"
   - code: qa_specialist
     name: "QA Specialist"
+    short_name: "QA Specialist"
     pool: remote
     # spec Section 9: every QA sample, quality review, and rework item lands
     # on the QA team, never on the tier that did the work.

@@ -304,6 +304,10 @@ def dimensions(sites=None, skills=None, assumptions=None):
         {
             "code": role["code"],
             "name": role["name"],
+            # The name for places the full one does not fit - a column on
+            # a dashboard. It comes from skills.yaml like the full name,
+            # so a page cannot invent an abbreviation of its own.
+            "short_name": role["short_name"],
             "pool": role["pool"],
             "scope": SITE_SCOPE if role["code"] in per_site else NETWORK_SCOPE,
         }

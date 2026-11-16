@@ -141,6 +141,20 @@ every run and the workbook names sensitivity runs in italics, both reading the
 same declared field — a sensitivity read as a proposal is how a finding gets
 quoted as something it never said.
 
+Each headline card is read one way: **green** moved the way a planner wants,
+**red** moved the other way, **blue** did not move at all. All six measures are
+better lower, required FTE among them. A difference that rounds to nothing at
+the precision the card shows says *no change* in words instead of printing a
+zero under an arrow — a rounding artefact should not wear a verdict — and the
+exact difference is on the card's hover, so nothing is hidden by being rounded.
+
+Roles are called what people call them — "Records Specialist", "Tier 1" —
+everywhere on the page, from the sidebar to the table. The short names come
+from `skills.yaml` beside the full ones, so the page never invents an
+abbreviation of its own; hover the table's Role column for the full name. The
+CSV keeps the model's own codes, because a downloaded row has to match a
+workbook row.
+
 Both charts are **locked**: the shortfall chart spans the whole plan year,
 every week of it, and each chart's vertical axis is fixed to a round number
 above the tallest value in the current selection. Neither can be panned or
@@ -161,15 +175,17 @@ generated file this repository commits, because a hosted app cannot spend nine
 minutes before it shows anything. Rebuild it after changing any input:
 
 ```powershell
-# Re-runs all 21 scenarios and rewrites the saved results (about nine minutes)
-.venv\Scripts\python -m capacity_model.api
+# Re-runs all 21 scenarios and rewrites the saved results (about nine minutes).
+# PYTHONPATH is needed because the package is not installed, only on the path:
+# pytest.ini sets it for the tests, and nothing sets it for a bare shell.
+$env:PYTHONPATH = "src"; .venv\Scripts\python -m capacity_model.api
 ```
 
 A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 729 tests, about 75 minutes
+# The validation checks: 734 tests, about 75 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -209,7 +225,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-729 tests across 23 files, all passing. Every validation check in the
+734 tests across 23 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference
