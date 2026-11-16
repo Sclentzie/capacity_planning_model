@@ -15,6 +15,7 @@ model to prove it - so nothing here needs eight minutes.
 """
 
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -456,6 +457,124 @@ def test_the_cost_chart_keeps_the_machine_half_even_when_it_is_zero(results):
 
 
 # ---------------------------------------------------------------------------
+# The charts are locked (11/16, after Siri's walkthrough)
+# ---------------------------------------------------------------------------
+
+
+def test_neither_chart_can_be_zoomed_or_panned(results):
+    """The finding behind this: a leader scrolled a chart out of scale.
+
+    Vega-Lite pans and zooms only through a parameter bound to "scales",
+    which is exactly what st.line_chart and st.bar_chart add and what
+    .interactive() adds in Altair. A spec with no such parameter cannot
+    be rescaled by a mouse or a trackpad, however hard anybody leans on
+    it, and the axes stay the ones this code chose.
+    """
+    gap = views.weekly_gap(results, "combined")
+    cost = views.cost_split(results, "combined")
+    for chart in (views.gap_chart(gap, 52), views.cost_chart(cost)):
+        spec = chart.to_dict()
+        assert views._scale_bindings(spec) == []
+        assert views.chart_is_locked(chart)
+
+
+def test_the_shortfall_chart_is_fixed_to_the_whole_plan_year(results):
+    """1 to 52, from the saved run's own plan length, never autoscaled.
+
+    Fixed across, so two runs are read against the same calendar and a
+    scenario that only bites in week 40 still shows its quiet start.
+    nice=False matters as much as the domain: left to itself Vega-Lite
+    rounds a domain outwards to its own taste, and the axis stops being
+    the plan year.
+    """
+    plan_weeks = results["meta"]["plan_weeks"]
+    assert plan_weeks == 52
+    spec = views.gap_chart(views.weekly_gap(results, "combined"), plan_weeks).to_dict()
+    scale = spec["encoding"]["x"]["scale"]
+    assert scale["domain"] == [1, 52]
+    assert scale["nice"] is False
+
+
+def test_both_charts_fix_the_vertical_axis_to_a_round_number(results):
+    """Fixed up as well as across, or the mouse is not the only thing
+    that can rescale a chart - a filter change would do it too.
+
+    The top is a round number above the tallest value in the current
+    selection, so it clears the data and lands where a reader would have
+    put it.
+    """
+    gap = views.weekly_gap(results, "combined")
+    gap_scale = views.gap_chart(gap, 52).to_dict()["encoding"]["y"]["scale"]
+    assert gap_scale["domain"][0] == 0
+    assert gap_scale["domain"][1] >= float(gap.max().max())
+    assert gap_scale["nice"] is False
+
+    cost = views.cost_split(results, "combined")
+    cost_scale = views.cost_chart(cost).to_dict()["encoding"]["y"]["scale"]
+    # The bars are stacked, so the top has to clear the whole bar.
+    assert cost_scale["domain"][1] >= float(cost.sum(axis=1).max())
+    assert cost_scale["nice"] is False
+
+
+def test_the_axis_top_is_a_number_a_reader_would_have_chosen():
+    """1, 2 or 5 times a power of ten, and never a degenerate scale."""
+    assert views.nice_ceiling(1473.6) == 2000
+    assert views.nice_ceiling(1_000_000) == 1_000_000
+    assert views.nice_ceiling(0.4) == 0.5
+    # An all-zero selection still needs an axis to draw a flat line on.
+    assert views.nice_ceiling(0) == 1
+    assert views.nice_ceiling(float("nan")) == 1
+
+
+def rendered_chart_specs(app):
+    """The chart specs as they reach the browser.
+
+    Streamlit's test harness has no typed element for a Vega-Lite chart,
+    so the spec is read off the protobuf. Worth the awkwardness: this is
+    the spec the page actually sends, which is the thing that has to be
+    locked - the chart object being right would not help if something
+    between here and the page added a binding back.
+    """
+    return [
+        json.loads(element.proto.spec)
+        for element in app.main
+        if getattr(element, "type", None) == "vega_lite_chart"
+    ]
+
+
+def test_the_charts_reach_the_page_locked(results):
+    """The lock, checked on the rendered page rather than the object."""
+    app = app_test().run()
+    assert not app.exception
+    specs = rendered_chart_specs(app)
+    assert len(specs) == 2
+
+    for spec in specs:
+        assert views._scale_bindings(spec) == []
+        # Fixed up: every chart on the page has a vertical axis that a
+        # filter change cannot quietly rescale.
+        assert spec["encoding"]["y"]["scale"]["domain"][0] == 0
+
+    gap_x = specs[0]["encoding"]["x"]["scale"]
+    assert gap_x["domain"] == [1, results["meta"]["plan_weeks"]]
+    assert gap_x["nice"] is False
+
+
+def test_the_charts_still_answer_a_hover(results):
+    """Locking the axes must not cost the one interaction they need.
+
+    Reading a week's value off a line is what this chart is for; what
+    was removed is the gesture that moves the picture.
+    """
+    gap_spec = views.gap_chart(views.weekly_gap(results, "combined"), 52).to_dict()
+    titles = [tip["title"] for tip in gap_spec["encoding"]["tooltip"]]
+    assert views.PLAN_WEEK in titles and views.SHORT_FTE_HEADER in titles
+
+    cost_spec = views.cost_chart(views.cost_split(results, "combined")).to_dict()
+    assert cost_spec["encoding"]["tooltip"]
+
+
+# ---------------------------------------------------------------------------
 # The detail table and its download
 # ---------------------------------------------------------------------------
 
@@ -490,6 +609,59 @@ def test_the_screen_table_is_rounded_the_way_the_workbook_prints(results):
     assert view["Labour cost"].sum() != pytest.approx(
         shown["Labour cost"].sum(), abs=1e-9
     )
+
+
+def test_the_detail_table_fits_a_page_without_scrolling_sideways(results):
+    """The second thing the walkthrough turned up (11/16).
+
+    Seventeen columns under the workbook's own headers run off the side
+    of a laptop screen, and the columns a reader most wants to compare -
+    available against required, short against surplus - end up behind a
+    sideways gesture. The screen gets short headers and measured widths;
+    the budget is what those widths have to add up to inside.
+    """
+    specs = views.plan_column_specs()
+    assert sum(spec["width"] for spec in specs) <= views.PLAN_WIDTH_BUDGET
+    # Every column keeps a width of its own: a column left to Streamlit
+    # would size itself to its header and undo the budget.
+    assert all(spec["width"] > 0 for spec in specs)
+
+
+def test_every_plan_column_has_a_short_header_and_keeps_its_full_one(results):
+    """A short header is only honest while the full one is a hover away.
+
+    The tooltip leads with the workbook's own header, so a reader who
+    wonders what "Uncov" is called on the tab can find out without
+    leaving the page - and so the two names can never drift apart,
+    because one is built from the other.
+    """
+    expected = [
+        header for header, _source, _format, _width, _total
+        in export.CAPACITY_PLAN_COLUMNS
+    ]
+    specs = views.plan_column_specs()
+    assert [spec["column"] for spec in specs] == expected
+    for spec in specs:
+        assert spec["help"].startswith(spec["column"])
+        assert len(spec["label"]) <= len(spec["column"])
+
+
+def test_the_download_is_not_shortened_with_the_screen(results):
+    """Short headers are done to a screen, not to the data.
+
+    A downloaded row has to match a workbook row, and a reader does
+    arithmetic on a CSV, so the file keeps the full headers and the full
+    precision whatever the table on screen is doing.
+    """
+    plan = views.filter_plan(
+        results["scenarios"][views.BASELINE_KEY]["plan"], ["tier_1"], None
+    )
+    view = views.plan_view(plan)
+    first_line = views.csv_bytes(view).decode("utf-8").splitlines()[0]
+    assert first_line.split(",")[0] == "Plan week"
+    assert views.HOURS_GAP_HEADER in first_line
+    shortened = {spec["label"] for spec in views.plan_column_specs()}
+    assert not shortened & set(first_line.split(",")) - {"Role"}
 
 
 def test_every_format_the_plan_uses_has_a_way_to_be_written(results):

@@ -19,6 +19,7 @@ and typography are 7d.
 
 import math
 
+import altair as alt
 import pandas as pd
 
 from . import api, export, scenarios
@@ -437,6 +438,164 @@ def cost_split(results, key):
 
 
 # ---------------------------------------------------------------------------
+# The charts, built as locked specs (11/16, after Siri's walkthrough)
+#
+# WHY THE CHARTS ARE BUILT HERE AND NOT DRAWN BY STREAMLIT. st.line_chart
+# and st.bar_chart hand Vega-Lite a pan-and-zoom binding, so a trackpad
+# gesture over the chart rescales both axes. A leader who does that by
+# accident has no way back short of reloading the page, and the chart
+# they are looking at in the meantime is one whose axes nobody chose.
+# These specs set both scales explicitly and bind nothing, so the picture
+# cannot be moved. Hover tooltips are untouched - reading a value off a
+# point is the interaction this chart is for.
+#
+# The axes are LOCKED, NOT AUTOSCALED-AND-FROZEN. The x axis is the plan
+# year, always every week of it, so two runs are read against the same
+# calendar and a scenario that only bites in week 40 still shows its
+# quiet start. The y axis is fixed to a round number above the tallest
+# value in the CURRENT SELECTION, so filtering to one site rescales it
+# once, deliberately, rather than leaving a one-site line flat along the
+# bottom of a network-sized axis.
+# ---------------------------------------------------------------------------
+
+RUN_HEADER = "Run"
+SHORT_FTE_HEADER = "Short FTE"
+COST_HEADER = "Plan-year cost"
+COST_HALF_HEADER = "Half"
+CHART_HEIGHT = 320
+
+# A chart that fits its data exactly puts the top point on the frame. A
+# little headroom keeps the peak readable without inventing space.
+HEADROOM = 1.08
+
+
+def nice_ceiling(value):
+    """The smallest round number at or above `value`, as an axis top.
+
+    Round means 1, 2 or 5 times a power of ten - the steps an axis is
+    normally labelled in - so the locked top lands somewhere a reader
+    would have put it, and a chart that is redrawn after a filter change
+    does not come back with a top of 1,473.6.
+    """
+    if not math.isfinite(value) or value <= 0:
+        # An all-zero selection still needs an axis. One unit of whatever
+        # is being measured gives a flat line along the bottom, which is
+        # the truth, instead of a degenerate scale.
+        return 1.0
+    power = 10 ** math.floor(math.log10(value))
+    for step in (1, 2, 5, 10):
+        if value <= step * power:
+            return float(step * power)
+    return float(10 * power)
+
+
+def _locked_x(field, plan_weeks):
+    """The plan year, every week of it, and not draggable."""
+    return alt.X(
+        f"{field}:Q",
+        title=PLAN_WEEK,
+        # nice=False, or Vega-Lite rounds the domain outwards to its own
+        # taste and the axis stops being the plan year.
+        scale=alt.Scale(domain=[1, plan_weeks], nice=False, zero=False, clamp=True),
+        axis=alt.Axis(tickMinStep=1, format="d"),
+    )
+
+
+def _locked_y(field, title, top):
+    """Zero to a round top, fixed, and not draggable."""
+    return alt.Y(
+        f"{field}:Q",
+        title=title,
+        scale=alt.Scale(domain=[0, top], nice=False, clamp=True),
+    )
+
+
+def gap_chart(table, plan_weeks):
+    """The weekly shortfall, locked to the plan year.
+
+    `table` is what weekly_gap returned: one column per run, indexed by
+    plan week. It is reshaped to one row per run and week, because a
+    chart that colours by run needs the run to be a value rather than a
+    column name.
+    """
+    long = (
+        table.reset_index()
+        .melt(id_vars=PLAN_WEEK, var_name=RUN_HEADER, value_name=SHORT_FTE_HEADER)
+    )
+    top = nice_ceiling(float(long[SHORT_FTE_HEADER].max()) * HEADROOM)
+    return (
+        alt.Chart(long)
+        .mark_line(point=False)
+        .encode(
+            x=_locked_x(PLAN_WEEK, plan_weeks),
+            y=_locked_y(SHORT_FTE_HEADER, SHORT_FTE_HEADER, top),
+            color=alt.Color(f"{RUN_HEADER}:N", title=RUN_HEADER),
+            tooltip=[
+                alt.Tooltip(f"{RUN_HEADER}:N", title=RUN_HEADER),
+                alt.Tooltip(f"{PLAN_WEEK}:Q", title=PLAN_WEEK, format="d"),
+                alt.Tooltip(
+                    f"{SHORT_FTE_HEADER}:Q", title=SHORT_FTE_HEADER, format=",.2f"
+                ),
+            ],
+        )
+        .properties(height=CHART_HEIGHT)
+    )
+
+
+def cost_chart(table):
+    """All-in cost as its two halves, one locked bar per run."""
+    long = (
+        table.reset_index()
+        .melt(id_vars=RUN_HEADER, var_name=COST_HALF_HEADER, value_name=COST_HEADER)
+    )
+    # The bars are stacked, so the axis has to clear the whole bar, not
+    # the taller of its two halves.
+    tallest = float(long.groupby(RUN_HEADER)[COST_HEADER].sum().max())
+    top = nice_ceiling(tallest * HEADROOM)
+    return (
+        alt.Chart(long)
+        .mark_bar()
+        .encode(
+            x=alt.X(f"{RUN_HEADER}:N", title=None, sort=list(table.index)),
+            y=_locked_y(COST_HEADER, COST_HEADER, top),
+            color=alt.Color(f"{COST_HALF_HEADER}:N", title=COST_HALF_HEADER),
+            tooltip=[
+                alt.Tooltip(f"{RUN_HEADER}:N", title=RUN_HEADER),
+                alt.Tooltip(f"{COST_HALF_HEADER}:N", title=COST_HALF_HEADER),
+                alt.Tooltip(f"{COST_HEADER}:Q", title=COST_HEADER, format="$,.0f"),
+            ],
+        )
+        .properties(height=CHART_HEIGHT)
+    )
+
+
+def chart_is_locked(chart):
+    """True when nothing in this spec lets a mouse rescale it.
+
+    Vega-Lite pans and zooms only through a parameter bound to "scales",
+    which is what Altair's .interactive() and Streamlit's built-in charts
+    add. No such parameter anywhere in the spec means the axes are the
+    ones the code chose, and stay so.
+    """
+    return not _scale_bindings(chart.to_dict())
+
+
+def _scale_bindings(node):
+    """Every parameter in a spec that is bound to the scales."""
+    found = []
+    if isinstance(node, dict):
+        for parameter in node.get("params", []) or []:
+            if isinstance(parameter, dict) and parameter.get("bind") == "scales":
+                found.append(parameter)
+        for value in node.values():
+            found.extend(_scale_bindings(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_scale_bindings(value))
+    return found
+
+
+# ---------------------------------------------------------------------------
 # The detail table
 # ---------------------------------------------------------------------------
 
@@ -487,6 +646,155 @@ def plan_display(view):
         if pd.api.types.is_numeric_dtype(rounded[header]):
             rounded[header] = rounded[header].round(decimals)
     return rounded
+
+
+# A short header for every Capacity Plan column, the width it needs, and
+# the full meaning as a tooltip (11/16, after Siri's walkthrough).
+#
+# WHY SHORT HEADERS AT ALL. Seventeen columns under the workbook's own
+# headers do not fit a laptop screen, and a table that scrolls sideways
+# hides the columns a reader most wants to compare - available against
+# required, short against surplus - behind a gesture. So the screen gets
+# short headers and the full workbook header sits in the tooltip, which
+# is also where a column that needs explaining gets it.
+#
+# THE CSV IS NOT TOUCHED. It keeps the workbook's headers and the full
+# precision, because a downloaded row has to match a workbook row and
+# because a reader does arithmetic on a CSV. Short headers are a thing
+# done to a screen, not to the data.
+#
+# WIDTHS ARE IN PIXELS and were measured against the widest value each
+# column actually holds (Role is "records_specialist" at 18 characters,
+# which is why it is the widest column on the page and cannot be made
+# much narrower without cutting a role name in half).
+PLAN_WIDTH_BUDGET = 1200
+
+PLAN_COLUMNS = (
+    # workbook header, short header, width, tooltip
+    ("Plan week", "Week", 48, "Plan week, 1 to the end of the plan year."),
+    ("Week starting", "Starting", 88, "Week starting (the Monday)."),
+    (
+        "Role",
+        "Role",
+        148,
+        "Role, by the model's own code - the same code the workbook and "
+        "the CSV carry, so a row here can be matched to a row there.",
+    ),
+    (
+        "Site or scope",
+        "Scope",
+        68,
+        "Site or scope. A site code for the two onsite roles, NETWORK for "
+        "the back-office teams, whose work is not done at a site.",
+    ),
+    ("Required hours", "Req", 68, "Required hours: the work that arrived."),
+    (
+        "Available hours",
+        "Avail",
+        68,
+        "Available hours: the roster after shrinkage, before overtime.",
+    ),
+    (
+        "Hours gap (available - required)",
+        "Gap",
+        74,
+        "Hours gap: available minus required. Negative is a shortfall.",
+    ),
+    ("Covered hours", "Cov", 68, "Covered hours: required work that got done."),
+    (
+        "Uncovered hours",
+        "Uncov",
+        68,
+        "Uncovered hours: required work that did not get done, after "
+        "overtime. Never netted against another team's surplus.",
+    ),
+    ("Overtime hours", "OT", 68, "Overtime hours worked to close the gap."),
+    ("Paid headcount", "Paid HC", 64, "Paid headcount on the roster that week."),
+    (
+        "Short FTE",
+        "Short",
+        56,
+        "Short FTE: the gap as whole people, before overtime. This is the "
+        "number the hiring trigger reads.",
+    ),
+    (
+        "Surplus FTE",
+        "Surplus",
+        64,
+        "Surplus FTE: spare capacity, shown separately because it never "
+        "offsets another team's shortfall.",
+    ),
+    (
+        "Phone service level",
+        "Phone",
+        56,
+        "Phone service level. Blank where nobody is waiting on a phone - "
+        "a zero there would read as a measurement.",
+    ),
+    (
+        "Walk-in service level",
+        "Walk-in",
+        64,
+        "Walk-in service level. Blank for the back office, which has no "
+        "counter.",
+    ),
+    (
+        "Days of inventory",
+        "Days",
+        52,
+        "Days of inventory: work waiting, in days. Blank for work that is "
+        "not allowed to wait.",
+    ),
+    ("Labour cost", "Labour", 68, "Labour cost for the week, in dollars."),
+)
+
+# How each column is written on screen. Streamlit takes a printf string,
+# so the precision is still the workbook's (hours to a tenth, FTE to a
+# hundredth) - what changes is the thousands separator and the percent
+# sign, which cost nothing and save a reader doing the conversion.
+PLAN_NUMBER_FORMATS = {
+    export.COUNT: "%d",
+    export.HOURS: "%,.1f",
+    export.FTE: "%,.2f",
+    export.DAYS: "%,.2f",
+    export.PERCENT: "percent",
+    export.MONEY: "$%,.0f",
+}
+
+TEXT_COLUMN = "text"
+
+
+def plan_column_specs():
+    """One spec per Capacity Plan column, as plain data.
+
+    Plain data rather than Streamlit objects on purpose: the dashboard
+    turns these into st.column_config, and a test can read the widths and
+    the headers without starting a page.
+    """
+    kind_of = {
+        header: number_format
+        for header, _source, number_format, _width, _total in (
+            export.CAPACITY_PLAN_COLUMNS
+        )
+    }
+    kind_of[HOURS_GAP_HEADER] = export.HOURS
+
+    specs = []
+    for header, short, width, note in PLAN_COLUMNS:
+        number_format = kind_of[header]
+        specs.append(
+            {
+                "column": header,
+                "label": short,
+                "width": width,
+                # The full workbook header leads the tooltip, so a reader
+                # who wonders what "Uncov" is called on the tab can find
+                # out without leaving the page.
+                "help": f"{header}. {note}",
+                "format": PLAN_NUMBER_FORMATS.get(number_format, TEXT_COLUMN),
+            }
+        )
+    return specs
 
 
 def csv_bytes(view):

@@ -141,6 +141,18 @@ every run and the workbook names sensitivity runs in italics, both reading the
 same declared field — a sensitivity read as a proposal is how a finding gets
 quoted as something it never said.
 
+Both charts are **locked**: the shortfall chart spans the whole plan year,
+every week of it, and each chart's vertical axis is fixed to a round number
+above the tallest value in the current selection. Neither can be panned or
+zoomed, because a chart scrolled out of scale by a stray trackpad gesture
+cannot be put back without reloading the page. Hovering still reads a value
+off a line.
+
+The detail table's headers are shortened to fit the page without scrolling
+sideways — hover one for the workbook's own name for that column and what it
+means. The CSV download is not shortened: it keeps the full headers and the
+full precision, because a downloaded row has to match a workbook row.
+
 Back-office roles are one network team rather than site staff, so a site or
 cluster view says that in words instead of drawing them at zero: a role that
 was never based at a site is not absent from it, and a zero would read as a
@@ -157,7 +169,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 720 tests, about 75 minutes
+# The validation checks: 729 tests, about 75 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -197,7 +209,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-720 tests across 23 files, all passing. Every validation check in the
+729 tests across 23 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference

@@ -216,22 +216,48 @@ def show_charts(results, key, choice, roles):
 
     st.markdown("#### Weekly shortfall, scenario against baseline")
     gap = views.weekly_gap(results, key, roles, scopes)
-    st.line_chart(gap, x_label=views.PLAN_WEEK, y_label="Short FTE")
+    # Built as a locked spec rather than drawn by st.line_chart, which
+    # hands the chart a pan-and-zoom binding: one stray trackpad gesture
+    # and the axes are nobody's choice, with no way back but a reload.
+    st.altair_chart(views.gap_chart(gap, results["meta"]["plan_weeks"]), width="stretch")
     st.caption(
         "Short FTE added up over the roles and scopes selected, by plan "
         "week. Surplus is NOT netted off: a spare hour in one team does "
         "not staff another team's counter, so a netted line would hide "
-        "exactly the weeks a planner is looking for."
+        "exactly the weeks a planner is looking for. The axes are fixed - "
+        "the whole plan year across, and a round number above the tallest "
+        "value in this selection up - so the chart cannot be scrolled out "
+        "of scale. Hover a line to read a week off it."
     )
 
     st.markdown("#### All-in cost, labour and machine")
-    st.bar_chart(views.cost_split(results, key), stack=True, y_label="Plan-year cost")
+    st.altair_chart(views.cost_chart(views.cost_split(results, key)), width="stretch")
     st.caption(
         "All-in cost is labour plus the automation's own invoice (spec "
         "6.4). The machine half is zero in any run that buys no "
         "automation, and is shown anyway so the two bars measure the same "
-        "thing. Network-wide, like the cards."
+        "thing. Network-wide, like the cards. Fixed axes, as above."
     )
+
+
+def plan_column_config():
+    """The Capacity Plan columns as Streamlit column settings.
+
+    The widths, the short headers and the tooltips are decided in views,
+    as plain data, so a test can check that the table fits the page
+    without starting one. All this does is put them in the shapes
+    Streamlit wants.
+    """
+    config = {}
+    for spec in views.plan_column_specs():
+        shared = {"label": spec["label"], "width": spec["width"], "help": spec["help"]}
+        if spec["format"] == views.TEXT_COLUMN:
+            config[spec["column"]] = st.column_config.TextColumn(**shared)
+        else:
+            config[spec["column"]] = st.column_config.NumberColumn(
+                format=spec["format"], **shared
+            )
+    return config
 
 
 def show_detail(results, key, choice, roles):
@@ -246,9 +272,16 @@ def show_detail(results, key, choice, roles):
         "headers. One row per plan week, role and scope. Blanks are "
         "deliberate: a service level exists only where somebody is waiting "
         "in real time, and days of inventory only for work that is allowed "
-        "to wait - a zero in either place would read as a measurement."
+        "to wait - a zero in either place would read as a measurement. "
+        "The headers are shortened to fit the page; hover one to see what "
+        "the workbook calls that column and what it means."
     )
-    st.dataframe(views.plan_display(view), hide_index=True, width="stretch")
+    st.dataframe(
+        views.plan_display(view),
+        hide_index=True,
+        width="stretch",
+        column_config=plan_column_config(),
+    )
     st.download_button(
         "Download these rows (CSV, synthetic)",
         data=views.csv_bytes(view),
