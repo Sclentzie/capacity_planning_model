@@ -72,6 +72,8 @@ ADVANCED_VALUE = "advanced_value"
 ADVANCED_SEARCH = "advanced_search"
 RUN_BUTTON = "run_custom"
 RESET_BUTTON = "reset_custom"
+SPEC_BUTTON = "load_spec_defaults"
+ADVANCED_ADD = "advanced_add"
 CONTROLS_PER_ROW = 3
 
 
@@ -409,12 +411,19 @@ def draw_control(column, control):
 
     The baseline is written into every control's LABEL, not only into its
     tooltip. A reader changing a rate needs to know what it was, and a
-    value you have to hover to find is a value you will not look up.
+    value you have to hover to find is a value you will not look up. The
+    same goes for spec 7.1's default where there is one: a reader looking
+    at the AI rates is usually asking how far from 7.1 they are, and the
+    answer belongs on the screen rather than in the spec.
     """
     name = CONTROL_PREFIX + control["key"]
     shown = controls.write(control, control["baseline"])
     label = f"{control['label']} - baseline {shown}"
     note = f"{control['help']}\n\nBASELINE: {shown}"
+    if control["spec"]:
+        spec_shown = controls.write(control, control["spec_default"])
+        label += f", {controls.SPEC_LABEL} {spec_shown}"
+        note += f"\n\n{controls.SPEC_LABEL.upper()}: {spec_shown}"
     kind = control["kind"]
 
     if kind == controls.TOGGLE:
@@ -430,10 +439,21 @@ def draw_control(column, control):
             key=name,
         )
     elif kind == controls.MULTISELECT:
+        # Plain names on the options, the way the roles are shown (11/16).
+        # Streamlit cannot give one option of a multiselect its own
+        # tooltip, so the codes are listed in the control's own tooltip -
+        # which is the hover a reader has, and keeps the code available
+        # for anybody tracing a row back to the spec.
+        names = control["option_names"] or {}
+        if names:
+            note += "\n\nCODES: " + "; ".join(
+                f"{code} {names.get(code, code)}" for code in control["options"]
+            )
         column.multiselect(
             label,
             control["options"],
             default=control["baseline"],
+            format_func=lambda code: names.get(code, code),
             help=note,
             key=name,
         )
@@ -464,6 +484,26 @@ def draw_control(column, control):
         )
 
 
+def load_spec_defaults(catalogue):
+    """Put the AI and automation group at spec 7.1's defaults.
+
+    WHY A BUTTON. The 7.1 defaults are thirteen values across two sides
+    of the model, and setting them by hand is thirteen chances to set one
+    of them wrong - after which the panel reports a run nobody meant and
+    nothing on screen says so. One button, and the figures are the ones
+    the spec's own AI run reports.
+
+    It writes into the widgets' session state and leaves the rerun to the
+    caller, because a widget already drawn in this script run cannot have
+    its value changed underneath it.
+    """
+    for control in catalogue:
+        if control["spec"]:
+            st.session_state[CONTROL_PREFIX + control["key"]] = (
+                control["spec_default"]
+            )
+
+
 def draw_groups(catalogue):
     """The levers, grouped the way a reader would look for one."""
     for group in controls.GROUP_ORDER:
@@ -474,6 +514,24 @@ def draw_groups(catalogue):
             f"{group}  ({len(mine)})", expanded=group == controls.DEMAND
         ):
             st.caption(controls.GROUP_NOTES[group])
+            if group == controls.AUTOMATION:
+                # Drawn before this group's controls, so none of them has
+                # been instantiated yet when the click is handled.
+                if st.button(
+                    f"Load the {controls.SPEC_LABEL}s",
+                    icon=":material/auto_awesome:",
+                    key=SPEC_BUTTON,
+                    help=(
+                        "Sets every control in this group to the default "
+                        "spec 7.1 gives it, which is the programme the "
+                        "saved AI and automation run reports. The "
+                        "proof-of-concept pair is left alone: it is a "
+                        "Section 7 addition and 7.1 names no default for "
+                        "it."
+                    ),
+                ):
+                    load_spec_defaults(catalogue)
+                    st.rerun()
             for start in range(0, len(mine), CONTROLS_PER_ROW):
                 row = mine[start:start + CONTROLS_PER_ROW]
                 for column, control in zip(st.columns(len(row)), row):
@@ -529,7 +587,9 @@ def draw_advanced():
                 f"New value (baseline {baseline_of[picked]!r})",
                 key=ADVANCED_VALUE,
             )
-            if st.button("Add this change", icon=":material/add:"):
+            if st.button(
+                "Add this change", icon=":material/add:", key=ADVANCED_ADD
+            ):
                 typed = st.session_state.get(ADVANCED_VALUE, "")
                 try:
                     value = controls.coerce(typed, baseline_of[picked])
@@ -541,8 +601,17 @@ def draw_advanced():
                         icon=":material/block:",
                     )
                 else:
-                    advanced_changes()[picked] = value
-                    st.rerun()
+                    try:
+                        # A rule about what KIND of number this input is
+                        # (11/17). A slider has ends; a text box has
+                        # none, and uptime at 500% was accepted before
+                        # this because no formula complains about it.
+                        controls.guard(picked, value)
+                    except ValueError as refused:
+                        st.error(str(refused), icon=":material/block:")
+                    else:
+                        advanced_changes()[picked] = value
+                        st.rerun()
 
         queued = advanced_changes()
         if queued:
@@ -553,6 +622,16 @@ def draw_advanced():
                 if drop.button("Remove", key=f"drop_{path}"):
                     queued.pop(path)
                     st.rerun()
+            # Allowed, and warned about: a value three times its baseline
+            # or under a third of it is outside anything this model has
+            # been run at, and the warning stays on screen next to the
+            # change rather than appearing once when it was typed.
+            for path, value in sorted(queued.items()):
+                warning = controls.tested_range_warning(
+                    path, value, controls.baseline_of_input(path)
+                )
+                if warning:
+                    st.warning(warning, icon=":material/warning:")
 
 
 def run_custom(catalogue):
@@ -563,8 +642,9 @@ def run_custom(catalogue):
     file goes through - so this panel cannot accept a change a file
     could not.
     """
+    values = control_values(catalogue)
     mapping = controls.overrides_from_values(
-        catalogue, control_values(catalogue), advanced_changes()
+        catalogue, values, advanced_changes()
     )
     try:
         # Validated before spending twenty-five seconds on it. It has to
@@ -577,6 +657,19 @@ def run_custom(catalogue):
         st.error(
             f"These inputs were refused: {refused}", icon=":material/block:"
         )
+        return None
+
+    # The break windows, in the panel's own words, against the opening
+    # hours as THIS run has them. The model does refuse an impossible
+    # window, but it refuses it as a sentence about interval masks
+    # twenty-five seconds in - and it accepts a lunch window that starts
+    # before the doors open, because intervals inside it still exist.
+    problems = controls.window_problems(
+        catalogue, values, controls.merged_config(mapping)
+    )
+    if problems:
+        for problem in problems:
+            st.error(problem, icon=":material/block:")
         return None
 
     signature = controls.signature(mapping)

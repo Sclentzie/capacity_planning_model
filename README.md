@@ -136,12 +136,27 @@ put it through the model on demand.
 
 The build-your-own panel has a control for every lever the 21 scenario files
 pull, grouped as Demand, Supply, Service, Structure, AI and automation, and
-Timing, with each input's baseline value on its tooltip. An **Advanced** box
-searches everything else in `assumptions.yaml` by key or by the comment the
-file carries above it, and changes it through the same validator a scenario
-file goes through — an input that does not exist is refused before the run
-starts, and a combination the model rejects (two rates over 100%, say) comes
-back with the model's own sentence.
+Timing, with each input's baseline value on its label. The AI and automation
+group also shows each control's **spec 7.1 default** beside the baseline and
+has a button that loads all thirteen of them at once — read from
+`scenarios/ai_and_automation.yaml`, so the button loads the programme the
+spec's own AI run reports rather than a copy of its numbers. Work types are
+picked by their plain names, with the codes on the control's tooltip. A lunch
+or break window that closes before it opens, falls outside the sites' opening
+hours, or is not a whole number of the model's half-hour intervals is refused
+in plain words before anything runs.
+
+An **Advanced** box searches everything else in `assumptions.yaml` by key or by
+the comment the file carries above it, and changes it through the same
+validator a scenario file goes through — an input that does not exist is
+refused before the run starts, and a combination the model rejects (two rates
+over 100%, say) comes back with the model's own sentence. Because a text box
+has no ends where a slider has them, the box also holds a value to the kind of
+number its name says it is: a share or a rate between 0% and 100%, hours,
+counts and costs not negative, a multiplier above zero. These are rules about
+kinds, not bounds on each input — nothing is added to the YAML. A value more
+than three times its baseline, or under a third of it, is allowed and warned
+about in yellow: outside the range this model was tested in.
 
 Nothing runs until you press **Run**. Streamlit reruns the script on every
 widget change, and a panel that ran the model on each of those would spend
@@ -210,7 +225,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 766 tests, about 80 minutes
+# The validation checks: 789 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -250,7 +265,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-766 tests across 24 files, all passing. Every validation check in the
+789 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference

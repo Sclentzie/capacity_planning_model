@@ -8,6 +8,7 @@ panel is a second, slightly different model wearing the same name.
 """
 
 import sys
+from datetime import time
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,11 @@ from capacity_model import api, config, controls, export, scenarios, views
 A_CENT = 0.005
 
 APP = Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
+
+# The dashboard's own session-state key for the Advanced box's queued
+# changes. Named here rather than imported, because importing the app
+# module would run the app.
+ADVANCED_STATE = "custom_advanced"
 
 
 @pytest.fixture(scope="module")
@@ -495,6 +501,397 @@ def test_a_custom_run_with_nothing_changed_is_the_baseline(catalogue, saved):
     for card in views.headline_cards(bundle, controls.CUSTOM_KEY):
         assert card["no_change"] is True, card["measure"]
         assert card["difference_text"] == views.NO_CHANGE
+
+
+# ---------------------------------------------------------------------------
+# Spec 7.1's defaults, on the panel (11/17)
+# ---------------------------------------------------------------------------
+
+# Spec 7.1's table, retyped here on purpose. This is the one place in the
+# project where restating the numbers is the right thing to do: the panel
+# reads them from the YAML and from the 7.1 scenario file, and a test that
+# read them the same way would only prove that one line of code agrees
+# with itself. These are what the spec says, in a reader's hand.
+SPEC_71 = {
+    "deflection_enabled": True,
+    "simple_contact_share": 0.40,
+    "ai_deflection": 0.15,
+    "self_service": 0.05,
+    "easy_contact_ratio": 0.50,
+    "escalation_uplift": 0.0,
+    "simple_task_share": 0.40,
+    "ai_handling": 0.10,
+    "automation_displacement": 0.10,
+    "easy_task_ratio": 0.50,
+    "extra_uplift": 0.0,
+    "realization": 1.0,
+    "only_work_types": [],
+}
+
+
+def test_the_7_1_defaults_on_the_panel_are_the_ones_the_spec_prints(catalogue):
+    """Every field of 7.1's table, and nothing it does not have."""
+    assert controls.spec_defaults(catalogue) == SPEC_71
+
+
+def test_a_7_1_default_is_claimed_only_where_7_1_gives_one(catalogue):
+    """The proof-of-concept pair sits in the same group on screen but is
+    a Section 7 addition from 11/02. Reading its value out of the 7.1 run
+    would have reported the baseline as a "7.1 default", which is a claim
+    the spec does not make.
+    """
+    by_key = {control["key"]: control for control in catalogue}
+    for key in ("poc_enabled", "poc_true_error_rate"):
+        assert by_key[key]["group"] == controls.AUTOMATION
+        assert by_key[key]["spec"] is False
+        assert by_key[key]["spec_default"] is None
+
+    # And no control outside that group claims one, because 7.1 is about
+    # the AI and automation inputs and nothing else.
+    for control in catalogue:
+        if control["group"] != controls.AUTOMATION:
+            assert control["spec"] is False, control["key"]
+
+
+def test_the_7_1_defaults_reproduce_the_saved_ai_run_to_the_cent(
+    catalogue, saved
+):
+    """The button is only worth having if it loads the real programme.
+
+    Pressed, plus the one control outside the group that run moves - it
+    starts in plan week 13 - the panel has to reproduce the saved "AI and
+    automation" run. If it does not, the button is loading a programme of
+    its own that happens to be named after the spec.
+    """
+    values = dict(SPEC_71)
+    values["starts_week"] = 13
+    mapping = controls.overrides_from_values(catalogue, values)
+    run = controls.run_signature(controls.signature(mapping))
+
+    expected = saved["scenarios"]["ai_and_automation"]["summary"]
+    for measure, value in expected.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        mine = run["summary"].get(measure)
+        assert isinstance(mine, (int, float)), f"{measure} missing"
+        assert float(mine) == pytest.approx(float(value), abs=A_CENT), measure
+
+
+def test_the_7_1_defaults_come_from_the_spec_s_own_run():
+    """Read from scenarios/ai_and_automation.yaml merged onto the YAML,
+    so the numbers cannot drift from the run the spec describes. Checked
+    here because a second copy of 0.40, 0.10 and 0.10 in this module
+    would have been the thing that drifted.
+    """
+    merged = controls.spec_config()
+    rates = merged["automation"]["rates"]
+    assert (rates["simple_task_share"], rates["ai_handling"]) == (0.40, 0.10)
+    assert merged["scenario"]["deflection"]["enabled"] is True
+    # The baseline itself has the supply-side rates switched off, which is
+    # why the button exists at all.
+    assert config.load_assumptions()["automation"]["rates"]["ai_handling"] == 0.0
+
+
+def test_the_7_1_button_sets_that_group_and_leaves_the_rest_alone():
+    """On the page: press it, read the widgets back."""
+    app = open_panel()
+    app.button(key="load_spec_defaults").click().run()
+    assert not app.exception
+
+    by_key = {
+        element.key: element
+        for group in ("slider", "toggle", "multiselect")
+        for element in getattr(app, group)
+        if element.key
+    }
+    assert by_key["ctl_simple_task_share"].value == pytest.approx(0.40)
+    assert by_key["ctl_ai_handling"].value == pytest.approx(0.10)
+    assert by_key["ctl_automation_displacement"].value == pytest.approx(0.10)
+    assert by_key["ctl_deflection_enabled"].value is True
+    # Not a "run everything" button: the volume and the start week are
+    # decisions of their own and it does not touch them.
+    assert by_key["ctl_demand_multiplier"].value == pytest.approx(1.0)
+    assert by_key["ctl_starts_week"].value == 1
+
+
+def test_the_7_1_default_is_shown_beside_the_baseline(catalogue):
+    """On the control's own label, not only in its tooltip: a reader
+    looking at an AI rate is usually asking how far from 7.1 it is.
+    """
+    app = open_panel()
+    labels = [
+        element.label
+        for group in ("slider", "toggle", "multiselect")
+        for element in getattr(app, group)
+        if element.key and element.key.startswith("ctl_")
+    ]
+    rate = next(label for label in labels if label.startswith("AI handling"))
+    assert "baseline 0%" in rate
+    assert f"{controls.SPEC_LABEL} 10%" in rate
+    # And a control 7.1 says nothing about does not pretend otherwise.
+    volume = next(label for label in labels if label.startswith("Volume"))
+    assert controls.SPEC_LABEL not in volume
+
+
+# ---------------------------------------------------------------------------
+# Work types by their plain names (11/17)
+# ---------------------------------------------------------------------------
+
+
+def test_the_work_type_picker_offers_plain_names(catalogue):
+    """Same rule as the roles: nobody should have to learn the codes to
+    use the dashboard. The code stays available for anybody tracing a row
+    back to the spec - on the control's tooltip, because Streamlit cannot
+    give one option of a multiselect a tooltip of its own.
+    """
+    control = next(c for c in catalogue if c["key"] == "only_work_types")
+    names = control["option_names"]
+    assert set(control["options"]) <= set(names)
+    assert names["W8"] == "Digital retrieval"
+
+    app = open_panel()
+    picker = next(
+        element for element in app.multiselect
+        if element.key == "ctl_only_work_types"
+    )
+    assert "Digital retrieval" in picker.options
+    assert "W8" not in picker.options
+    assert "W8" in picker.help
+
+
+def test_a_chosen_work_type_is_written_in_words(catalogue):
+    """The summary above the results, and the CSV's own provenance line,
+    name the rows in words - with the code, which is what the Next Dollar
+    ranking and the spec call them.
+    """
+    lines = controls.describe_changes(
+        catalogue, {"only_work_types": ["W5", "W8"]}
+    )
+    assert any(
+        "Authorization validation (W5), Digital retrieval (W8)" in line
+        for line in lines
+    )
+    # Empty is not "nothing automated": it is every eligible row.
+    control = next(c for c in catalogue if c["key"] == "only_work_types")
+    assert controls.write(control, []) == "all eligible"
+
+
+# ---------------------------------------------------------------------------
+# Break and lunch windows (11/17)
+# ---------------------------------------------------------------------------
+
+
+def test_a_window_that_closes_before_it_opens_is_refused(catalogue):
+    problems = controls.window_problems(catalogue, {"lunch_to": "10:30"})
+    assert len(problems) == 1
+    assert "close after it opens" in problems[0]
+    # Equal ends are refused too: a window of no minutes has nowhere to
+    # put a thirty-minute lunch.
+    assert controls.window_problems(catalogue, {"lunch_to": "11:00"})
+
+
+def test_a_window_outside_the_opening_hours_is_refused(catalogue):
+    """Stricter than the model's own check on purpose. The model asks
+    whether any interval falls inside the window, so a lunch window from
+    07:00 passes it - and the sites open at 08:00.
+    """
+    early = controls.window_problems(catalogue, {"lunch_from": "07:00"})
+    assert len(early) == 1
+    assert "while the site is open" in early[0]
+
+    late = controls.window_problems(
+        catalogue, {"afternoon_break_to": "17:30"}
+    )
+    assert len(late) == 1
+    assert "while the site is open" in late[0]
+
+
+def test_a_window_the_model_could_not_place_is_refused(catalogue):
+    """Half-hour intervals: a window of 165 minutes is not a whole number
+    of them, which is the third thing the model refuses.
+    """
+    problems = controls.window_problems(catalogue, {"lunch_from": "11:15"})
+    assert len(problems) == 1
+    assert "30-minute intervals" in problems[0]
+
+
+def test_the_lunch_windows_the_saved_runs_use_are_not_refused(catalogue):
+    """The check has to be exactly as strict as the model, and no more.
+    Both lunch runs are legal windows and have to stay legal.
+    """
+    assert controls.window_problems(catalogue, {}) == []
+    assert controls.window_problems(catalogue, {"lunch_to": "14:30"}) == []
+    assert controls.window_problems(
+        catalogue,
+        {"lunch_to": "14:30", "afternoon_break_from": "14:30"},
+    ) == []
+
+
+def test_the_window_is_checked_against_this_run_s_opening_hours(catalogue):
+    """The opening hours are an input too, and the Advanced box reaches
+    them. Checked against the merged config rather than against the file,
+    so a window legal at 08:00 is refused in a run that opens at 09:00.
+    """
+    mapping = controls.overrides_from_values(
+        catalogue, {"lunch_from": "08:00"}, {"intraday.site_hours.opens": "09:00"}
+    )
+    merged = controls.merged_config(mapping)
+    assert merged["intraday"]["site_hours"]["opens"] == "09:00"
+
+    problems = controls.window_problems(
+        catalogue, {"lunch_from": "08:00"}, merged
+    )
+    assert len(problems) == 1
+    assert "open 09:00 to 17:00" in problems[0]
+    # The same window is fine in a run that opens at eight.
+    assert controls.window_problems(catalogue, {"lunch_from": "08:00"}) == []
+
+
+def test_an_impossible_window_costs_a_message_not_a_run():
+    """On the page, before the model runs: the refusal is the point.
+
+    The model would refuse it too, as a sentence about interval masks,
+    twenty-five seconds in.
+    """
+    app = open_panel()
+    opens = next(
+        element for element in app.time_input if element.key == "ctl_lunch_from"
+    )
+    # Past the window's own closing time of 14:00.
+    opens.set_value(time(15, 0)).run()
+    before = controls.run_signature.cache_info()
+
+    app.button(key="run_custom").click().run()
+    assert not app.exception
+    assert any("close after it opens" in note.value for note in app.error)
+
+    after = controls.run_signature.cache_info()
+    assert (after.hits, after.misses) == (before.hits, before.misses)
+
+
+# ---------------------------------------------------------------------------
+# The Advanced box's own guards (11/17)
+# ---------------------------------------------------------------------------
+
+
+def test_a_share_outside_nought_to_a_hundred_is_refused():
+    """The hole this closes: a slider has ends and a text box has none,
+    so automation.uptime at 500% - a machine up five times as often as
+    there is time - was accepted, because no formula complains about it.
+    """
+    with pytest.raises(ValueError, match="between 0% and 100%"):
+        controls.guard("automation.uptime", 5.0)
+    with pytest.raises(ValueError, match="between 0% and 100%"):
+        controls.guard("automation.work_types.W1.qa_sample_rate", -0.2)
+    # And the value it already has is fine, or the box would be useless.
+    assert controls.guard("automation.uptime", 0.9) == 0.9
+
+
+def test_an_amount_cannot_be_negative():
+    for path, value in (
+        ("supply.roles.tier_1.hourly_cost", -28),
+        ("automation.cost.platform_per_week", -1),
+        ("fte.paid_hours_per_week", -40),
+        ("supply.roles.tier_1.training_weeks", -3),
+    ):
+        with pytest.raises(ValueError, match="cannot be negative"):
+            controls.guard(path, value)
+    assert controls.guard("supply.roles.tier_1.hourly_cost", 0) == 0
+
+
+def test_a_multiplier_has_to_be_above_zero():
+    with pytest.raises(ValueError, match="above zero"):
+        controls.guard("scenario.demand_multiplier", 0)
+    with pytest.raises(ValueError, match="above zero"):
+        controls.guard("demand.holiday.factor", -0.5)
+    assert controls.guard("demand.holiday.factor", 0.6) == 0.6
+
+
+def test_a_value_with_no_range_to_be_outside_of_is_left_alone():
+    """A name, a date, a true or false, and a growth rate that can
+    legitimately be negative: no rule is invented for these.
+    """
+    assert controls.guard("onsite_team.primary_goal", "walk_ins") == "walk_ins"
+    assert controls.guard("shrinkage.normalize_to_annual_rate", True) is True
+    assert controls.input_rule("demand.annual_growth") is None
+    assert controls.guard("demand.annual_growth", -0.02) == -0.02
+
+
+def test_every_input_passes_the_rule_its_own_name_earns_it():
+    """THE TEST THAT KEEPS THIS HONEST. The kind of number an input is is
+    read off its name, which is a guess - a good one, and a guess. This
+    puts every input in assumptions.yaml through the rule its name earns
+    it, at the value the file actually holds. A name the classification
+    reads wrongly - the random seed under `shrinkage`, a cost that
+    happens to be called a rate - shows up here as its own baseline being
+    refused, which is the loudest way for it to show up.
+    """
+    for row in controls.searchable_inputs():
+        controls.guard(row["path"], row["baseline"])
+
+
+def test_a_value_far_from_its_baseline_warns_but_still_runs():
+    """Yellow, not red (11/17). The model is not wrong at ten times the
+    platform fee; nobody has ever run it there.
+    """
+    warning = controls.tested_range_warning(
+        "automation.cost.platform_per_week", 5000, 500
+    )
+    assert warning and controls.TESTED_RANGE_NOTE in warning
+    # It is a warning and not a refusal, so the guard stays quiet.
+    controls.guard("automation.cost.platform_per_week", 5000)
+
+
+def test_the_ordinary_sensitivity_runs_do_not_warn():
+    """Half the realization and twice the attrition are the sensitivity
+    runs this project is built on. A warning that fired on those would be
+    a warning nobody read.
+    """
+    assert controls.tested_range_warning(
+        "automation.rates.realization", 0.5, 1.0
+    ) is None
+    assert controls.tested_range_warning(
+        "scenario.attrition_multiplier", 2.0, 1.0
+    ) is None
+    # Three times is inside; past it is not.
+    assert controls.tested_range_warning("automation.uptime", 0.3, 0.1) is None
+    assert controls.tested_range_warning("automation.uptime", 0.35, 0.1)
+
+
+def test_nothing_is_claimed_about_a_baseline_of_zero():
+    """The rule is a ratio and there is no multiple of zero. The four
+    automation rates sit at zero in the baseline, so a ratio rule would
+    have warned about every AI run there is.
+    """
+    assert controls.tested_range_warning(
+        "automation.rates.ai_handling", 0.10, 0.0
+    ) is None
+    assert controls.tested_range_warning("automation.extra_uplift", 0.2, 0.0) is None
+
+
+def test_the_advanced_box_refuses_and_warns_on_the_page():
+    """Through the real widgets: type a value, press Add.
+
+    Refused values never join the run; allowed-but-far ones do, and say
+    so in yellow beside the change.
+    """
+    app = open_panel()
+    app.text_input(key="advanced_search").set_value("uptime").run()
+    app.text_input(key="advanced_value").set_value("5.0").run()
+    app.button(key="advanced_add").click().run()
+    assert not app.exception
+    assert any("between 0% and 100%" in note.value for note in app.error)
+    assert not app.session_state[ADVANCED_STATE]
+
+    # A value inside the rule but a long way from the baseline: queued,
+    # and warned about.
+    app.text_input(key="advanced_value").set_value("0.2").run()
+    app.button(key="advanced_add").click().run()
+    assert not app.exception
+    assert app.session_state[ADVANCED_STATE] == {"automation.uptime": 0.2}
+    assert any(
+        controls.TESTED_RANGE_NOTE in note.value for note in app.warning
+    )
 
 
 # ---------------------------------------------------------------------------

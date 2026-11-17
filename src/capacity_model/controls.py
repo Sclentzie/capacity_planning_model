@@ -26,7 +26,7 @@ import functools
 import json
 import re
 
-from . import api, config
+from . import api, config, scenarios
 
 # ---------------------------------------------------------------------------
 # The groups, in the order a reader meets them
@@ -51,7 +51,9 @@ GROUP_NOTES = {
     AUTOMATION: "Spec 7.1. DEFLECTION is demand-side - the contact never "
                 "arrives. AUTOMATION is supply-side - the work arrives and "
                 "a machine does it. The two are separate on purpose, and "
-                "realization scales all four rates.",
+                "realization scales all four rates. The button below sets "
+                "this group to 7.1's own defaults, which is the programme "
+                "the saved AI and automation run reports.",
     TIMING: "When the change starts. The figures are always the whole "
             "52-week plan year, which is why a late change looks mild.",
 }
@@ -90,6 +92,8 @@ def _control(
     maximum=None,
     step=None,
     options=None,
+    option_names=None,
+    spec=False,
     written=PLAIN,
 ):
     """One control, as a plain record.
@@ -99,6 +103,11 @@ def _control(
     `row` (the row's own code) and `field` (the path inside that row)
     instead of pointing at a leaf, because that is how the model's merge
     finds a row: by its code, never by its position in the list.
+
+    `spec` marks a control spec 7.1's table gives a default for, so the
+    panel can show that default beside the baseline and load the whole
+    set at once. It is a flag rather than a number: the default itself is
+    read from the YAML (see `catalogue`), never retyped here.
     """
     return {
         "key": key,
@@ -114,14 +123,71 @@ def _control(
         "maximum": maximum,
         "step": step,
         "options": options,
+        "option_names": option_names,
+        "spec": spec,
         "written": written,
     }
+
+
+# ---------------------------------------------------------------------------
+# Spec 7.1's own defaults
+#
+# WHY A SCENARIO FILE AND NOT A TABLE OF NUMBERS HERE. The AI and
+# automation group has a button that loads spec 7.1's defaults, and 7.1's
+# defaults are already written down twice: once in assumptions.yaml, which
+# holds the deflection shares at their 7.1 values and the four supply-side
+# rates at zero, and once in scenarios/ai_and_automation.yaml, which is
+# the run described as "the four 7.1 rates at their defaults".
+#
+# So the button reads that file and merges it, exactly as a run of it
+# would. Retyping 0.40, 0.10 and 0.10 into this module would have made a
+# third copy, and the first time one of the three moved, the panel would
+# have been loading a default the model no longer had.
+# ---------------------------------------------------------------------------
+
+SPEC_FILE = "ai_and_automation.yaml"
+SPEC_LABEL = "7.1 default"
+
+
+def spec_config(assumptions=None):
+    """assumptions.yaml with the 7.1 defaults run merged onto it."""
+    assumptions = assumptions or config.load_assumptions()
+    path = scenarios.scenario_dir(assumptions) / SPEC_FILE
+    return scenarios.apply_scenario(scenarios.load_scenario(path), assumptions)
+
+
+def spec_defaults(controls):
+    """Control key -> spec 7.1's default, for the controls 7.1 names.
+
+    Not every control in the AI and automation group is in 7.1's table:
+    the proof-of-concept pair is a Section 7 addition from 11/02, and
+    reading its value out of the 7.1 run would have reported the baseline
+    as a "7.1 default" - a claim the spec does not make.
+    """
+    return {
+        control["key"]: control["spec_default"]
+        for control in controls
+        if control["spec"]
+    }
+
+
+def work_type_names(assumptions=None):
+    """Work-type code -> its plain name, from the table in the YAML.
+
+    So the panel can offer "Digital retrieval" rather than "W8". Same
+    rule as the roles (11/16): a reader should not have to learn the
+    codes to use the dashboard, and the code stays available for anyone
+    tracing a figure back to the spec.
+    """
+    assumptions = assumptions or config.load_assumptions()
+    return {row["code"]: row["name"] for row in assumptions["work_types"]}
 
 
 def catalogue(assumptions=None, sites=None):
     """Every control, with its baseline value read from the YAML."""
     assumptions = assumptions or config.load_assumptions()
     sites = sites if sites is not None else config.load_sites()
+    names = work_type_names(assumptions)
 
     eligible = sorted(
         (
@@ -294,6 +360,7 @@ def catalogue(assumptions=None, sites=None):
             "buys automation is not the same claim as a run that also "
             "assumes requesters stop calling.",
             TOGGLE, path=("scenario", "deflection", "enabled"),
+            spec=True,
         ),
         _control(
             "simple_contact_share", AUTOMATION, "Simple contact share",
@@ -301,6 +368,7 @@ def catalogue(assumptions=None, sites=None):
             "deflected at all (7.1).",
             SLIDER, path=("scenario", "deflection", "simple_contact_share"),
             minimum=0.0, maximum=1.0, step=0.05, written=PERCENT,
+            spec=True,
         ),
         _control(
             "ai_deflection", AUTOMATION, "AI deflection of simple contacts",
@@ -308,6 +376,7 @@ def catalogue(assumptions=None, sites=None):
             "the contact.",
             SLIDER, path=("scenario", "deflection", "ai_deflection"),
             minimum=0.0, maximum=1.0, step=0.01, written=PERCENT,
+            spec=True,
         ),
         _control(
             "self_service", AUTOMATION, "Self-service of simple contacts",
@@ -316,6 +385,7 @@ def catalogue(assumptions=None, sites=None):
             "the simple share, and the model refuses a total above 100%.",
             SLIDER, path=("scenario", "deflection", "self_service"),
             minimum=0.0, maximum=1.0, step=0.01, written=PERCENT,
+            spec=True,
         ),
         _control(
             "simple_task_share", AUTOMATION, "Simple task share",
@@ -323,6 +393,7 @@ def catalogue(assumptions=None, sites=None):
             "a machine (7.1).",
             SLIDER, path=("automation", "rates", "simple_task_share"),
             minimum=0.0, maximum=1.0, step=0.05, written=PERCENT,
+            spec=True,
         ),
         _control(
             "ai_handling", AUTOMATION, "AI handling of simple tasks",
@@ -330,6 +401,7 @@ def catalogue(assumptions=None, sites=None):
             "and an AI does it.",
             SLIDER, path=("automation", "rates", "ai_handling"),
             minimum=0.0, maximum=1.0, step=0.01, written=PERCENT,
+            spec=True,
         ),
         _control(
             "automation_displacement", AUTOMATION,
@@ -339,6 +411,7 @@ def catalogue(assumptions=None, sites=None):
             "share.",
             SLIDER, path=("automation", "rates", "automation_displacement"),
             minimum=0.0, maximum=1.0, step=0.01, written=PERCENT,
+            spec=True,
         ),
         _control(
             "realization", AUTOMATION, "Realization",
@@ -347,6 +420,7 @@ def catalogue(assumptions=None, sites=None):
             "to ask whether its finding survives.",
             SLIDER, path=("automation", "rates", "realization"),
             minimum=0.0, maximum=1.0, step=0.05, written=PERCENT,
+            spec=True,
         ),
         _control(
             "easy_contact_ratio", AUTOMATION,
@@ -358,6 +432,7 @@ def catalogue(assumptions=None, sites=None):
             SLIDER,
             path=("scenario", "deflection", "easy_handle_time_relative"),
             minimum=0.0, maximum=1.0, step=0.05, written=PERCENT,
+            spec=True,
         ),
         _control(
             "easy_task_ratio", AUTOMATION,
@@ -366,6 +441,7 @@ def catalogue(assumptions=None, sites=None):
             "takes. It sets the supply-side mix uplift the same way.",
             SLIDER, path=("automation", "easy_handle_time_relative"),
             minimum=0.0, maximum=1.0, step=0.05, written=PERCENT,
+            spec=True,
         ),
         _control(
             "escalation_uplift", AUTOMATION, "Escalation uplift on contacts",
@@ -375,6 +451,7 @@ def catalogue(assumptions=None, sites=None):
             "that, deflection gives the hours back.",
             SLIDER, path=("scenario", "deflection", "escalation_uplift"),
             minimum=0.0, maximum=0.25, step=0.005, written=PERCENT,
+            spec=True,
         ),
         _control(
             "extra_uplift", AUTOMATION, "Extra uplift on tasks",
@@ -382,6 +459,7 @@ def catalogue(assumptions=None, sites=None):
             "people are harder than the mix uplift alone accounts for.",
             SLIDER, path=("automation", "extra_uplift"),
             minimum=0.0, maximum=0.25, step=0.005, written=PERCENT,
+            spec=True,
         ),
         _control(
             "only_work_types", AUTOMATION, "Automate only these work types",
@@ -390,7 +468,8 @@ def catalogue(assumptions=None, sites=None):
             "rows the machine is pointed at is a decision, not an "
             "optimisation, so the panel asks rather than choosing.",
             MULTISELECT, path=("automation", "rates", "only_work_types"),
-            options=eligible,
+            options=eligible, option_names=names,
+            spec=True,
         ),
         _control(
             "poc_enabled", AUTOMATION, "After the proof of concept",
@@ -417,8 +496,17 @@ def catalogue(assumptions=None, sites=None):
         ),
     ]
 
+    # The 7.1 defaults are read from the 7.1 run itself, once, rather
+    # than restated. Where the baseline already holds 7.1's value - the
+    # deflection shares, the easy ratios, realization - the two agree,
+    # and a reader seeing them agree learns something true: that input is
+    # at its spec default already.
+    spec = spec_config(assumptions)
     for control in controls:
         control["baseline"] = baseline_value(control, assumptions, sites)
+        control["spec_default"] = (
+            baseline_value(control, spec, sites) if control["spec"] else None
+        )
     return controls
 
 
@@ -531,12 +619,251 @@ def describe_changes(controls, values, advanced=None):
     return lines
 
 
+# ---------------------------------------------------------------------------
+# Break and lunch windows: refused before the run, not during it
+#
+# WHY THIS IS HERE AND NOT ONLY IN THE MODEL. intervals.relief_windows
+# already refuses a window that ends before it starts, and one with no
+# interval inside it. Two things were wrong with leaving it at that. The
+# refusal arrived twenty-five seconds into a run, as a sentence about
+# interval masks; and the model's own test is weaker than the panel's
+# needs - a window from 07:00 still has intervals inside it, so the model
+# accepts a lunch that starts before the doors open.
+#
+# So the panel checks the whole window against the opening hours, in
+# words, before anything runs. The model keeps its own check: this one is
+# a courtesy, not the guard.
+# ---------------------------------------------------------------------------
+
+
+def _clock(text):
+    """"HH:MM" as minutes since midnight."""
+    hours, minutes = str(text).split(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def window_problems(controls, values, assumptions=None):
+    """Break and lunch windows that could not be worked, in plain words.
+
+    One message per window, naming the window the way the YAML names it,
+    so a reader who has moved two of them knows which one is wrong.
+    """
+    assumptions = assumptions or config.load_assumptions()
+    hours = assumptions["intraday"]["site_hours"]
+    opens, closes = hours["opens"], hours["closes"]
+    step = hours["interval_minutes"]
+    named = {
+        relief["code"]: relief["name"]
+        for relief in assumptions["breaks_and_lunch"]["reliefs"]
+    }
+
+    # The panel's time controls, gathered back into the windows they
+    # describe: {relief code: {"from": "11:00", "to": "14:00"}}.
+    windows = {}
+    for control in controls:
+        if control["kind"] != TIME or control["row"] is None:
+            continue
+        edge = control["field"][-1]
+        value = values.get(control["key"], control["baseline"])
+        if hasattr(value, "strftime"):
+            value = value.strftime("%H:%M")
+        windows.setdefault(control["row"], {})[edge] = value
+
+    problems = []
+    for code, window in windows.items():
+        name = named.get(code, code)
+        start, end = window.get("from"), window.get("to")
+        if start is None or end is None:
+            continue
+        if _clock(end) <= _clock(start):
+            problems.append(
+                f"{name}: the window opens at {start} and closes at {end}. "
+                "A window has to close after it opens, or there is nowhere "
+                "to put the break."
+            )
+            continue
+        if _clock(start) < _clock(opens) or _clock(end) > _clock(closes):
+            problems.append(
+                f"{name}: the window runs {start} to {end}, but the sites "
+                f"are open {opens} to {closes}. A break can only be taken "
+                "while the site is open."
+            )
+            continue
+        span = _clock(end) - _clock(start)
+        if span % step:
+            problems.append(
+                f"{name}: {start} to {end} is {span} minutes, which is not "
+                f"a whole number of the model's {step}-minute intervals."
+            )
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# The Advanced box's own guards (11/17)
+#
+# WHAT THEY ARE FOR. The 36 controls above cannot leave their ranges: a
+# slider has ends. The Advanced box reaches every other input in
+# assumptions.yaml by name, and before this it refused only what the
+# MODEL refuses - so automation.uptime = 5.0, a machine up 500% of the
+# time, was accepted because no formula divides by it in a way that
+# complains.
+#
+# WHAT THEY ARE NOT. They are not bounds on each input, which would be
+# an input-file change and Siri's to make. They are rules about what KIND
+# of number an input is, decided 11/17: a share or a rate lies between 0%
+# and 100%; hours, counts and costs cannot be negative; a multiplier is
+# above zero. The kind is read off the input's own name, and a test
+# checks that every input in the file passes the rule its name earns it -
+# which is what catches a name this classification reads wrongly.
+# ---------------------------------------------------------------------------
+
+SHARE_RULE = "share"
+NOT_NEGATIVE_RULE = "not negative"
+ABOVE_ZERO_RULE = "above zero"
+
+# Read in this order: a multiplier first, because `attrition_multiplier`
+# carries an attrition word too and it is the multiplier that it is.
+MULTIPLIER_WORDS = ("multiplier", "multiple", "factor")
+SHARE_WORDS = (
+    "share", "rate", "rates", "shrinkage", "attrition", "occupancy",
+    "uptime", "realization", "deflection", "uplift",
+)
+COUNT_WORDS = (
+    "hour", "hours", "week", "weeks", "day", "days", "minute", "minutes",
+    "second", "seconds", "cost", "fee", "headcount", "count", "item",
+    "items", "people", "size", "charts", "passes", "interval", "intervals",
+    "staff", "class", "classes", "threshold", "points", "dev", "tolerance",
+    "target", "seed", "budget", "fte",
+)
+
+# Names the word rules above would read wrongly, so they are named.
+# `occupancy_cap` and `overtime_cap` are shares whose word is "cap", which
+# is also in `capacity_cap_items_per_week`, a count; `relative_std_dev` is
+# not the same kind of thing as `easy_handle_time_relative`.
+SHARE_SEGMENTS = (
+    "occupancy_cap", "overtime_cap", "paid_shrinkage",
+    "easy_handle_time_relative", "human_ramp_threshold", "mape_target",
+)
+
+# More than this many times its baseline, or less than one divided by it,
+# and the value gets a warning rather than a refusal. A screen judgement,
+# like the slider ranges, and kept beside them for the same reason.
+TESTED_RANGE_FACTOR = 3
+
+
+def _words(segment):
+    """One key segment as its underscore-separated words."""
+    return set(str(segment).split("_"))
+
+
+def _segment_rule(segment):
+    if segment in SHARE_SEGMENTS:
+        return SHARE_RULE
+    words = _words(segment)
+    if words & set(MULTIPLIER_WORDS):
+        return ABOVE_ZERO_RULE
+    if words & set(SHARE_WORDS):
+        return SHARE_RULE
+    if words & set(COUNT_WORDS):
+        return NOT_NEGATIVE_RULE
+    return None
+
+
+def input_rule(path):
+    """Which kind of number this input is, from its own name.
+
+    The last segment decides it where it can. Where it cannot - the
+    leaves of `fte.starting_headcount` are site codes,
+    `intraday.day_of_week_share` is keyed by weekday - the walk carries
+    on up the path, because in a table of numbers the kind is written on
+    the block and not on each row. An input no segment speaks for gets no
+    rule, and nothing is claimed about it.
+    """
+    segments = str(path).split(".")
+    for segment in reversed(segments):
+        rule = _segment_rule(segment)
+        if rule:
+            return rule
+    return None
+
+
+def guard(path, value, rule=None):
+    """Refuse a value that is not the kind of number the input is.
+
+    Raises ValueError with a sentence a reader can act on. Only numbers
+    are checked: a name, a date or a true/false has no range to be
+    outside of, and `coerce` has already refused the wrong type.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    rule = rule or input_rule(path)
+    if rule == SHARE_RULE and not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"{path} is a share or a rate, so it lies between 0% and 100% "
+            f"- that is, between 0 and 1. You typed {value:g}."
+        )
+    if rule == NOT_NEGATIVE_RULE and value < 0:
+        raise ValueError(
+            f"{path} is an amount - hours, a count or a cost - so it "
+            f"cannot be negative. You typed {value:g}."
+        )
+    if rule == ABOVE_ZERO_RULE and value <= 0:
+        raise ValueError(
+            f"{path} is a multiplier, so it has to be above zero. You "
+            f"typed {value:g}."
+        )
+    return value
+
+
+TESTED_RANGE_NOTE = "outside the range this model was tested in"
+
+
+def tested_range_warning(path, value, baseline):
+    """A warning, not a refusal, for a value far from its baseline.
+
+    A value the rules above allow can still be one nobody has ever run
+    this model at. Three times is the line (11/17): far enough that
+    something has been typed deliberately, close enough that the ordinary
+    sensitivity runs - halved realization, doubled attrition - pass
+    without a warning nobody would then read.
+
+    Nothing is said when the baseline is zero. The rule is a ratio, and
+    there is no multiple of zero: the four automation rates sit at zero in
+    the baseline, so a ratio rule would warn about every AI run there is.
+    """
+    numbers = (
+        isinstance(value, (int, float))
+        and isinstance(baseline, (int, float))
+        and not isinstance(value, bool)
+        and not isinstance(baseline, bool)
+    )
+    if not numbers or not baseline:
+        return None
+    ratio = value / baseline
+    if 1 / TESTED_RANGE_FACTOR <= ratio <= TESTED_RANGE_FACTOR:
+        return None
+    return (
+        f"{path} = {value:g} is {ratio:.3g} times its baseline of "
+        f"{baseline:g}: {TESTED_RANGE_NOTE}. The run is allowed; read its "
+        "figures as an extrapolation."
+    )
+
+
 def write(control, value):
     """One control's value, written the way its control shows it."""
     if isinstance(value, bool):
         return "on" if value else "off"
     if isinstance(value, (list, tuple)):
-        return ", ".join(str(item) for item in value) if value else "all eligible"
+        if not value:
+            return "all eligible"
+        # Plain names, with the code kept in brackets: the name is what a
+        # reader recognises, and the code is what they need to look the
+        # row up in the spec or in the Next Dollar ranking.
+        names = control.get("option_names") or {}
+        return ", ".join(
+            f"{names[item]} ({item})" if item in names else str(item)
+            for item in value
+        )
     if control["written"] == PERCENT and isinstance(value, (int, float)):
         # %g rather than a fixed precision: the rates run from 0.5% to
         # 100%, and a fixed two decimals would print either "100.00%" or
@@ -636,6 +963,19 @@ def searchable_inputs(assumptions=None):
     return sorted(found, key=lambda row: row["path"])
 
 
+def baseline_of_input(path, assumptions=None):
+    """One Advanced input's baseline value, by its dotted key.
+
+    So a queued change can be compared with the YAML's own value on a
+    later rerun, when whatever was searched for is long gone from the
+    screen.
+    """
+    for row in searchable_inputs(assumptions):
+        if row["path"] == path:
+            return row["baseline"]
+    return None
+
+
 def search_inputs(query, assumptions=None, limit=25):
     """The inputs whose key or description matches what was typed."""
     wanted = (query or "").strip().lower()
@@ -688,6 +1028,19 @@ def signature(mapping):
     order are one run rather than two.
     """
     return json.dumps(mapping, sort_keys=True, default=str)
+
+
+def merged_config(mapping, assumptions=None):
+    """assumptions.yaml with one panel's overrides merged onto it.
+
+    For the checks that have to read an input as the RUN will see it
+    rather than as the file has it. The break windows are checked against
+    the opening hours, and the opening hours are themselves an input the
+    Advanced box can reach.
+    """
+    assumptions = assumptions or config.load_assumptions()
+    scenario = api.scenario_from_overrides(mapping, assumptions)
+    return scenarios.apply_scenario(scenario, assumptions)
 
 
 @functools.lru_cache(maxsize=32)
