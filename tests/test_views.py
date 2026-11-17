@@ -349,11 +349,20 @@ def test_the_comparison_view_rounds_only_for_the_screen(results):
     assert list(shown[views.KIND_HEADER]) == list(table[views.KIND_HEADER])
 
 
-def test_the_page_offers_both_views_and_renders_the_comparison(results):
-    """The second view, through the real app."""
+def test_the_page_offers_every_view_and_renders_the_comparison(results):
+    """The views on offer, and the comparison one, through the real app.
+
+    It asserted exactly two views until 7c added the third, and failed
+    for a change that was correct. Kept as a set rather than a count, so
+    a view added later still has to be named here deliberately - the
+    point of the assertion is that the page offers what it is meant to,
+    not that nothing ever changes.
+    """
     app = app_test().run()
     views_offered = view_picker(app).options
-    assert set(views_offered) == {"One run", "Compare all scenarios"}
+    assert set(views_offered) == {
+        "One run", "Compare all scenarios", "Build your own"
+    }
 
     view_picker(app).set_value("Compare all scenarios").run()
     assert not app.exception

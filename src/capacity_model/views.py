@@ -989,6 +989,67 @@ def plan_column_specs():
     return specs
 
 
+# ---------------------------------------------------------------------------
+# A run somebody built themselves (7c)
+# ---------------------------------------------------------------------------
+
+
+def custom_bundle(saved, run):
+    """The saved bundle with one custom run spliced in beside the baseline.
+
+    WHY SPLICE RATHER THAN BUILD A SECOND SET OF VIEWS. Every function
+    above takes a bundle and a key, and a custom run is the same shape as
+    a saved one - api.run returns what the saved file stores. Handing the
+    cards, the charts and the table a two-run bundle means the panel
+    shows its result through exactly the code the browse view uses, so a
+    custom run and a saved run cannot be reported differently.
+
+    The baseline comes from the saved file rather than being re-run: it
+    is the same baseline, it is already on disk, and re-running it would
+    add twenty-five seconds to every custom run to arrive at a number
+    the file already holds.
+    """
+    baseline = saved["scenarios"][BASELINE_KEY]
+    return {
+        "meta": saved["meta"],
+        "comparison": pd.DataFrame([baseline["summary"], run["summary"]]),
+        "scenarios": {BASELINE_KEY: baseline, run["key"]: run},
+    }
+
+
+CSV_COMMENT = "#"
+
+
+def custom_csv_bytes(view, changes):
+    """The filtered rows, with what was changed written above them.
+
+    WHY A COMMENT BLOCK AND NOT EXTRA COLUMNS. A downloaded row has to
+    stay matchable against a workbook row, which is the rule the CSV has
+    followed since 7b, so the data is left exactly as it is and the
+    provenance goes above it on lines a reader and pandas both skip
+    (`comment="#"`). A custom run is the one download where that
+    provenance is not optional: the figures came from inputs that exist
+    nowhere else, so a file that did not carry them would be unreadable
+    a week later.
+    """
+    lines = [f"{CSV_COMMENT} {api.CUSTOM_RUN_NAME} - Northbrook Records "
+             "Services is fictional and every figure here is generated."]
+    if changes:
+        lines.append(f"{CSV_COMMENT} Changed from the baseline:")
+        lines.extend(f"{CSV_COMMENT}   {line}" for line in changes)
+    else:
+        lines.append(
+            f"{CSV_COMMENT} Nothing changed: these are the baseline inputs."
+        )
+    head = "\n".join(lines) + "\n"
+    return head.encode("utf-8") + csv_bytes(view)
+
+
+def custom_csv_name(scope_code):
+    """SYNTHETIC and CUSTOM both in the name, for a file that travels."""
+    return f"capacity_plan_CUSTOM_{scope_code}_SYNTHETIC.csv"
+
+
 def csv_bytes(view):
     """The filtered rows as a CSV, at full precision."""
     return view.to_csv(index=False).encode("utf-8")

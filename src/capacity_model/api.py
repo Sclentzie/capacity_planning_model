@@ -46,7 +46,11 @@ from . import config, export, scenarios
 # What an on-demand run is called when the caller does not name it. A
 # label, not a model input - every number still comes from the YAML.
 CUSTOM_RUN_KEY = "custom"
-CUSTOM_RUN_NAME = "Custom run"
+# Every custom run says so, and says it is synthetic, because a
+# screenshot of a card travels further than the panel that made it
+# and nothing else on that card would say the figures came from a
+# run somebody assembled rather than from a scenario file (11/17).
+CUSTOM_RUN_NAME = "Custom run (synthetic)"
 NOTHING_CHANGED = "Nothing; the baseline inputs unchanged"
 
 # A run somebody builds in the dashboard is a CHOICE: they are asking
@@ -144,6 +148,28 @@ def scenario_from_overrides(mapping=None, baseline=None, key=CUSTOM_RUN_KEY):
     mapping["scenario"] = header
 
     return scenarios.scenario_from_mapping(mapping, key, label=header["name"])
+
+
+def check_overrides(mapping=None, baseline=None, sites=None):
+    """Refuse a bad set of overrides WITHOUT running the model.
+
+    Added 11/17 for the build-your-own panel, which needs to tell a
+    reader that a key does not exist before it spends twenty-five
+    seconds finding out. scenario_from_overrides alone does not catch
+    it: it builds the run record, and the keys are not checked until
+    something merges them into the loaded YAML. So this does the merge -
+    cheap, no model, no plan - and lets the same ValueError out that a
+    typo in a scenario file would raise.
+
+    Returns the scenario record, so a caller that wants to run it next
+    does not have to build it twice.
+    """
+    baseline = baseline or config.load_assumptions()
+    sites = sites if sites is not None else config.load_sites()
+    scenario = scenario_from_overrides(mapping, baseline)
+    scenarios.apply_scenario(scenario, baseline)
+    scenarios.apply_site_overrides(scenario, sites)
+    return scenario
 
 
 def run(overrides=None, *, baseline=None, sites=None, key=CUSTOM_RUN_KEY):

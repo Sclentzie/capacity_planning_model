@@ -124,14 +124,39 @@ It opens in a browser and reads the saved results in
 `app/data/scenario_results_SYNTHETIC.json.gz` — all 21 runs, so the page loads
 in under a second instead of waiting out the model.
 
-There are two views. **One run**: pick a run in the sidebar — the baseline
+There are three views. **One run**: pick a run in the sidebar — the baseline
 first, then the eight the Summary tab headlines, then the rest — and filter to
 the network, a cluster or a site, and to the roles inside it. The page shows the
 six headline measures against the baseline, that run's one-line finding where
 the Summary has one, the weekly shortfall against the baseline, the all-in cost
 split into labour and machine, and the Capacity Plan rows behind all of it, with
 a CSV download. **Compare all scenarios**: every run at once, ranked by what it
-does to the all-in cost.
+does to the all-in cost. **Build your own**: assemble a run of your own and
+put it through the model on demand.
+
+The build-your-own panel has a control for every lever the 21 scenario files
+pull, grouped as Demand, Supply, Service, Structure, AI and automation, and
+Timing, with each input's baseline value on its tooltip. An **Advanced** box
+searches everything else in `assumptions.yaml` by key or by the comment the
+file carries above it, and changes it through the same validator a scenario
+file goes through — an input that does not exist is refused before the run
+starts, and a combination the model rejects (two rates over 100%, say) comes
+back with the model's own sentence.
+
+Nothing runs until you press **Run**. Streamlit reruns the script on every
+widget change, and a panel that ran the model on each of those would spend
+twenty-five seconds answering a question you had not finished asking. Inputs
+already run come back at once, because the runs are remembered by a signature
+of the overrides. **Reset to baseline** puts every control back and forgets
+them.
+
+A custom run is called **Custom run (synthetic)** however faithfully it copies
+a scenario, and its CSV carries the inputs that were changed on comment lines
+above the header row — a custom run's inputs exist nowhere else, so a file
+without them would be unreadable a week later. Its results are shown through
+the same cards, charts and table as a saved run, so the two cannot be reported
+differently. A test sets the controls to five scenario files' inputs and
+checks the figures come back as those scenarios', to the cent.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -185,7 +210,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 734 tests, about 75 minutes
+# The validation checks: 766 tests, about 80 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -225,7 +250,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-734 tests across 23 files, all passing. Every validation check in the
+766 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference

@@ -1,8 +1,10 @@
-"""The capacity model dashboard: the browse view (spec Section 8, 7b).
+"""The capacity model dashboard (spec Section 8, Sessions 7b and 7c).
 
-Two views. ONE RUN: pick a run, filter it, and see what it did to the
-plan. COMPARE ALL SCENARIOS: every run at once, ranked by what it does to
-the all-in cost, with each run's declared kind beside it.
+Three views. ONE RUN: pick a saved run, filter it, and see what it did to
+the plan. COMPARE ALL SCENARIOS: every run at once, ranked by what it
+does to the all-in cost, with each run's declared kind beside it. BUILD
+YOUR OWN: set the levers yourself and put the result through the model on
+demand.
 
 Every figure on the page comes from the saved results that
 capacity_model.api built, and is selected and labelled by
@@ -13,8 +15,9 @@ name.
 WHY IT READS A FILE. Running the 21 scenarios takes about eight minutes.
 A hosted app that did that on every page view would be unusable, so the
 runs are saved by `python -m capacity_model.api`, committed, and loaded
-here in well under a second. A build-your-own run that goes through the
-doorway on demand is 7c.
+here in well under a second. A build-your-own run goes through the
+doorway instead, on demand, and takes about twenty-five seconds - which
+is why that view has a Run button rather than running as controls move.
 
 WHAT IS NOT HERE YET: the design pass (7d). This is the functional view.
 
@@ -23,8 +26,10 @@ Run it:
 """
 
 import sys
+from datetime import time
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 # The model lives under src/ and is not installed as a package, so the
@@ -35,7 +40,7 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from capacity_model import api, views  # noqa: E402  (after the path is set)
+from capacity_model import api, controls, views  # noqa: E402  (after the path)
 
 TITLE = "Northbrook Records Services - capacity model (SYNTHETIC)"
 
@@ -52,7 +57,22 @@ ROLES_KEY = "roles"
 
 ONE_RUN = "One run"
 COMPARE_ALL = "Compare all scenarios"
-VIEWS = (ONE_RUN, COMPARE_ALL)
+BUILD_YOUR_OWN = "Build your own"
+VIEWS = (ONE_RUN, COMPARE_ALL, BUILD_YOUR_OWN)
+
+# The panel's own state, which has to outlive a rerun. Streamlit reruns
+# the whole script on every widget change, so what was run last is kept
+# here rather than recomputed - that is what stops the model running on
+# every keystroke.
+SIGNATURE_STATE = "custom_signature"
+ADVANCED_STATE = "custom_advanced"
+CONTROL_PREFIX = "ctl_"
+ADVANCED_PICK = "advanced_pick"
+ADVANCED_VALUE = "advanced_value"
+ADVANCED_SEARCH = "advanced_search"
+RUN_BUTTON = "run_custom"
+RESET_BUTTON = "reset_custom"
+CONTROLS_PER_ROW = 3
 
 
 @st.cache_data
@@ -257,8 +277,13 @@ def plan_column_config():
     return config
 
 
-def show_detail(results, key, choice, roles):
-    """The Capacity Plan rows behind it all, and a CSV of them."""
+def show_detail(results, key, choice, roles, changes=None):
+    """The Capacity Plan rows behind it all, and a CSV of them.
+
+    `changes` is the plain list of what a custom run changed. Given,
+    the download carries it; left out, this is a saved run and the
+    download is the one 7b settled on.
+    """
     st.markdown("#### The rows behind the figures")
     plan = views.filter_plan(
         results["scenarios"][key]["plan"], roles, choice["scopes"]
@@ -279,18 +304,35 @@ def show_detail(results, key, choice, roles):
         width="stretch",
         column_config=plan_column_config(),
     )
+    if changes is None:
+        data = views.csv_bytes(view)
+        name = views.csv_name(key, choice["code"])
+        note = (
+            "The download carries the figures at full precision, not the "
+            "rounded ones on screen, and SYNTHETIC in its file name - the "
+            "only label that travels with a file."
+        )
+    else:
+        # A custom run's inputs exist nowhere else, so they travel with
+        # the file. Above the header row, on comment lines, so the data
+        # rows still match the workbook's.
+        data = views.custom_csv_bytes(view, changes)
+        name = views.custom_csv_name(choice["code"])
+        note = (
+            "The download carries the figures at full precision and, above "
+            "the header row, the inputs this run changed - a custom run's "
+            "inputs exist nowhere else, so a file without them would be "
+            "unreadable a week later. The lines start with # so a reader "
+            "and pandas both skip them."
+        )
     st.download_button(
         "Download these rows (CSV, synthetic)",
-        data=views.csv_bytes(view),
-        file_name=views.csv_name(key, choice["code"]),
+        data=data,
+        file_name=name,
         mime="text/csv",
         icon=":material/download:",
     )
-    st.caption(
-        "The download carries the figures at full precision, not the "
-        "rounded ones on screen, and SYNTHETIC in its file name - the only "
-        "label that travels with a file."
-    )
+    st.caption(note)
 
 
 def show_comparison(results):
@@ -318,6 +360,341 @@ def show_comparison(results):
     )
 
 
+# ---------------------------------------------------------------------------
+# Build your own (7c)
+#
+# WHY THERE IS A RUN BUTTON. Streamlit reruns the whole script on every
+# widget change. A panel that ran the model on each of those would spend
+# twenty-five seconds answering a question nobody had finished asking, so
+# nothing runs until the button is pressed, and the signature of what was
+# run last is kept in session state - a later rerun redraws that result
+# from the cache instead of computing it again.
+# ---------------------------------------------------------------------------
+
+
+@st.cache_data
+def control_catalogue():
+    """The levers, with their baseline values, read once per session."""
+    return controls.catalogue()
+
+
+def advanced_changes():
+    """The Advanced box's queued changes: dotted key -> value."""
+    return st.session_state.setdefault(ADVANCED_STATE, {})
+
+
+def control_values(catalogue):
+    """What every control is set to right now.
+
+    Read out of session state rather than from the widgets' return
+    values, because the Run button is drawn ABOVE the controls - it has
+    to be, or a reader would scroll past thirty-six of them to find it -
+    so the values are not in hand yet when the button is read.
+    """
+    values = {}
+    for control in catalogue:
+        name = CONTROL_PREFIX + control["key"]
+        value = st.session_state.get(name, control["baseline"])
+        if control["kind"] == controls.TIME and hasattr(value, "strftime"):
+            # The model wants "HH:MM"; st.time_input hands back a time.
+            value = value.strftime("%H:%M")
+        if control["kind"] == controls.MULTISELECT:
+            value = list(value)
+        values[control["key"]] = value
+    return values
+
+
+def draw_control(column, control):
+    """One lever, as the widget its catalogue record asks for.
+
+    The baseline is written into every control's LABEL, not only into its
+    tooltip. A reader changing a rate needs to know what it was, and a
+    value you have to hover to find is a value you will not look up.
+    """
+    name = CONTROL_PREFIX + control["key"]
+    shown = controls.write(control, control["baseline"])
+    label = f"{control['label']} - baseline {shown}"
+    note = f"{control['help']}\n\nBASELINE: {shown}"
+    kind = control["kind"]
+
+    if kind == controls.TOGGLE:
+        column.toggle(label, value=control["baseline"], help=note, key=name)
+    elif kind == controls.SELECT:
+        options = list(control["options"])
+        column.selectbox(
+            label,
+            options,
+            index=options.index(control["baseline"]),
+            format_func=lambda option: option or "none",
+            help=note,
+            key=name,
+        )
+    elif kind == controls.MULTISELECT:
+        column.multiselect(
+            label,
+            control["options"],
+            default=control["baseline"],
+            help=note,
+            key=name,
+        )
+    elif kind == controls.TIME:
+        hour, minute = (int(part) for part in control["baseline"].split(":"))
+        column.time_input(
+            label, value=time(hour, minute), step=1800, help=note, key=name
+        )
+    elif kind == controls.NUMBER:
+        column.number_input(
+            label,
+            min_value=control["minimum"],
+            max_value=control["maximum"],
+            value=control["baseline"],
+            step=control["step"],
+            help=note,
+            key=name,
+        )
+    else:
+        column.slider(
+            label,
+            min_value=control["minimum"],
+            max_value=control["maximum"],
+            value=control["baseline"],
+            step=control["step"],
+            help=note,
+            key=name,
+        )
+
+
+def draw_groups(catalogue):
+    """The levers, grouped the way a reader would look for one."""
+    for group in controls.GROUP_ORDER:
+        mine = [control for control in catalogue if control["group"] == group]
+        if not mine:
+            continue
+        with st.expander(
+            f"{group}  ({len(mine)})", expanded=group == controls.DEMAND
+        ):
+            st.caption(controls.GROUP_NOTES[group])
+            for start in range(0, len(mine), CONTROLS_PER_ROW):
+                row = mine[start:start + CONTROLS_PER_ROW]
+                for column, control in zip(st.columns(len(row)), row):
+                    draw_control(column, control)
+
+
+def draw_advanced():
+    """Any other input, by name.
+
+    The controls above are the levers the 21 scenario files pull. This is
+    everything else - handle times, shrinkage, hiring lead times, the
+    automation cost lines - searched by key and by the sentence
+    assumptions.yaml carries above it. Every change still goes through
+    the doorway, so a key that does not exist, or a value the model
+    refuses, is refused here with the model's own message.
+    """
+    with st.expander("Advanced: change any other input by name"):
+        st.caption(
+            "Search by key or by what the input is for. The description is "
+            "the comment assumptions.yaml carries above that input, so it "
+            "is the project's own sentence rather than one invented for "
+            "this box. Changes queue up below and go through the same "
+            "validator as a scenario file."
+        )
+        query = st.text_input(
+            "Search the inputs",
+            key=ADVANCED_SEARCH,
+            placeholder="shrinkage, handle time, lead week, platform fee",
+        )
+        found = controls.search_inputs(query) if query else []
+
+        if query and not found:
+            st.info("No input matches that.", icon=":material/search_off:")
+        if found:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Input": row["path"],
+                            "Baseline": str(row["baseline"]),
+                            "What it is": row["description"] or "-",
+                        }
+                        for row in found
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+            paths = [row["path"] for row in found]
+            baseline_of = {row["path"]: row["baseline"] for row in found}
+            picked = st.selectbox("Input to change", paths, key=ADVANCED_PICK)
+            st.text_input(
+                f"New value (baseline {baseline_of[picked]!r})",
+                key=ADVANCED_VALUE,
+            )
+            if st.button("Add this change", icon=":material/add:"):
+                typed = st.session_state.get(ADVANCED_VALUE, "")
+                try:
+                    value = controls.coerce(typed, baseline_of[picked])
+                except (TypeError, ValueError) as refused:
+                    st.error(
+                        f"{picked}: {refused}. The baseline is "
+                        f"{baseline_of[picked]!r}, so this input wants a "
+                        f"{type(baseline_of[picked]).__name__}.",
+                        icon=":material/block:",
+                    )
+                else:
+                    advanced_changes()[picked] = value
+                    st.rerun()
+
+        queued = advanced_changes()
+        if queued:
+            st.markdown("**Changes queued here**")
+            for path, value in sorted(queued.items()):
+                line, drop = st.columns([5, 1])
+                line.write(f"`{path}` = {value}")
+                if drop.button("Remove", key=f"drop_{path}"):
+                    queued.pop(path)
+                    st.rerun()
+
+
+def run_custom(catalogue):
+    """Assemble what the panel says, validate it, and run it.
+
+    Returns the signature of the run, or None if the inputs were refused.
+    The refusal comes from the doorway - the same validator a scenario
+    file goes through - so this panel cannot accept a change a file
+    could not.
+    """
+    mapping = controls.overrides_from_values(
+        catalogue, control_values(catalogue), advanced_changes()
+    )
+    try:
+        # Validated before spending twenty-five seconds on it. It has to
+        # be check_overrides: scenario_from_overrides builds the run
+        # record without touching the YAML, so it would accept a key
+        # that does not exist and the refusal would arrive at the END of
+        # the run.
+        api.check_overrides(mapping)
+    except (KeyError, TypeError, ValueError) as refused:
+        st.error(
+            f"These inputs were refused: {refused}", icon=":material/block:"
+        )
+        return None
+
+    signature = controls.signature(mapping)
+    hits_before = controls.run_signature.cache_info().hits
+    with st.spinner(
+        "Running the model on your inputs. A full plan year takes about "
+        "twenty-five seconds; inputs already run come back at once."
+    ):
+        try:
+            controls.run_signature(signature)
+        except (KeyError, TypeError, ValueError) as refused:
+            st.error(
+                f"The model refused these inputs: {refused}",
+                icon=":material/block:",
+            )
+            return None
+    if controls.run_signature.cache_info().hits > hits_before:
+        st.toast("These inputs had been run already, so that was instant.")
+    return signature
+
+
+def reset_panel(catalogue):
+    """Every control back to the baseline, and the results forgotten."""
+    for control in catalogue:
+        st.session_state.pop(CONTROL_PREFIX + control["key"], None)
+    st.session_state.pop(SIGNATURE_STATE, None)
+    st.session_state[ADVANCED_STATE] = {}
+    controls.forget_runs()
+
+
+def show_custom_result(saved, catalogue, signature, choice, roles):
+    """The result, through the browse view's own cards, charts and table.
+
+    The same functions the One run view calls, handed a two-run bundle.
+    A custom run and a saved run are therefore reported by one piece of
+    code, and cannot disagree about what a card means.
+    """
+    run = controls.run_signature(signature)
+    bundle = views.custom_bundle(saved, run)
+    key = run["key"]
+    changes = controls.describe_changes(
+        catalogue, control_values(catalogue), advanced_changes()
+    )
+
+    st.subheader(run["name"])
+    if changes:
+        st.markdown("**Changed from the baseline:**")
+        for line in changes:
+            st.markdown(f"- {line}")
+    else:
+        st.info(
+            "Nothing is changed, so this IS the baseline: every card below "
+            "says no change, which is the panel working rather than a "
+            "fault.",
+            icon=":material/info:",
+        )
+    st.caption(
+        f"The change starts in plan week {run['starts_week']}; the figures "
+        "below are the whole plan year, as everywhere else on this page."
+    )
+
+    show_cards(bundle, key)
+    if not roles:
+        st.warning(
+            "No roles selected, so there is nothing to chart or list. Pick "
+            "at least one role in the sidebar.",
+            icon=":material/filter_alt_off:",
+        )
+        return
+    show_charts(bundle, key, choice, roles)
+    show_detail(bundle, key, choice, roles, changes=changes)
+
+
+def show_build_your_own(saved, dimensions):
+    """The panel: controls, a Run button, and the result below them."""
+    catalogue = control_catalogue()
+
+    st.subheader("Build your own scenario")
+    st.caption(
+        "Every lever the 21 scenario files pull, plus an Advanced box for "
+        "anything else in assumptions.yaml. Nothing runs until you press "
+        "Run: a full plan year takes about twenty-five seconds, and a "
+        "panel that ran on every change would spend it answering a "
+        "question you had not finished asking. Inputs you have already "
+        "run this session come back at once."
+    )
+
+    go, reset, _rest = st.columns([1, 1, 4])
+    pressed = go.button(
+        "Run", type="primary", icon=":material/play_arrow:", key=RUN_BUTTON
+    )
+    if reset.button(
+        "Reset to baseline", icon=":material/restart_alt:", key=RESET_BUTTON
+    ):
+        reset_panel(catalogue)
+        st.rerun()
+
+    draw_groups(catalogue)
+    draw_advanced()
+
+    if pressed:
+        signature = run_custom(catalogue)
+        if signature is None:
+            return
+        st.session_state[SIGNATURE_STATE] = signature
+
+    signature = st.session_state.get(SIGNATURE_STATE)
+    if not signature:
+        st.info(
+            "Set the controls above and press Run.", icon=":material/tune:"
+        )
+        return
+
+    st.divider()
+    choice, roles = pick_filters(dimensions)
+    show_custom_result(saved, catalogue, signature, choice, roles)
+
+
 def main():
     st.set_page_config(page_title="Capacity model (synthetic)", layout="wide")
     st.title(TITLE)
@@ -343,6 +720,13 @@ def main():
             "plan weeks, all synthetic."
         )
         show_comparison(results)
+        return
+
+    if view == BUILD_YOUR_OWN:
+        # The filters are drawn by the panel itself, under the controls
+        # and above the result, because there is nothing to filter until
+        # a run exists.
+        show_build_your_own(results, filter_dimensions())
         return
 
     dimensions = filter_dimensions()
