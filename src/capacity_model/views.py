@@ -43,6 +43,24 @@ VALUE_FORMATS = {
     export.COUNT: lambda value: f"{value:,.0f}",
 }
 
+# The same precisions again, as the printf strings Streamlit's column
+# settings take, so a figure in a TABLE is written the way the same
+# figure is written on a CARD (7d, 11/17). One table, used by the
+# Capacity Plan columns and by the comparison table: before this, the
+# comparison table printed raw numbers, so the all-in cost read
+# "$7,456,636" on a card and "7456636" in the other view.
+TEXT_COLUMN = "text"
+
+SCREEN_NUMBER_FORMATS = {
+    export.COUNT: "%d",
+    export.HOURS: "%,.1f",
+    export.FTE: "%,.2f",
+    export.DAYS: "%,.2f",
+    export.PERCENT: "percent",
+    export.MONEY: "$%,.0f",
+    export.MONEY_CENTS: "$%,.2f",
+}
+
 # How many decimals the workbook prints, so the table on screen can be
 # rounded to the same precision and still be a number a reader can sort.
 DISPLAY_DECIMALS = {
@@ -56,6 +74,71 @@ DISPLAY_DECIMALS = {
 }
 
 NO_CHANGE = "no change"
+
+# ---------------------------------------------------------------------------
+# One name per thing (7d, 11/17)
+#
+# The three views are named here rather than in the page, because the
+# intro tells a visitor what the views are called and the sidebar draws
+# them. Two copies of "Compare all scenarios" would eventually differ by
+# a word, and the sentence pointing at the radio button would stop
+# pointing at it.
+# ---------------------------------------------------------------------------
+
+ONE_RUN_VIEW = "One run"
+COMPARE_VIEW = "Compare all scenarios"
+BUILD_VIEW = "Build your own"
+VIEW_ORDER = (ONE_RUN_VIEW, COMPARE_VIEW, BUILD_VIEW)
+
+# What each measure IS, in plain words (7d, 11/17). One note per measure,
+# used by the card tooltips and by the comparison table's column
+# tooltips, so the two views cannot explain the same figure differently.
+# Keyed by the workbook's own column header, which is what the cards and
+# that table both label the figure.
+MEASURE_NOTES = {
+    "Scenario": "The run's name, as the workbook's Capacity Scenarios tab "
+                "lists it.",
+    # "Kind" is KIND_HEADER below; written out here because that constant
+    # belongs to the comparison section and a test checks the two agree.
+    "Kind": "Declared by the run itself, never worked out here. A CHOICE is "
+        "something the operation could decide to do; a RISK is something "
+        "that could happen to it, which nobody is proposing; a "
+        "SENSITIVITY varies one input of another run to test whether its "
+        "finding holds.",
+    "All-in cost": "Labour plus the automation's own invoice, over the "
+                   "whole 52-week plan year (spec 6.4). Dollars.",
+    "All-in vs baseline": "This run's all-in cost minus the baseline's. "
+                          "Negative is a saving.",
+    "Labour cost": "Pay for the hours worked over the plan year, overtime "
+                   "included.",
+    "Machine cost": "What the automation is invoiced: a fee per item, the "
+                    "shared platform fee, and setup spread over a year. "
+                    "Zero in a run that buys no automation, and shown "
+                    "anyway so every run reports the same measure.",
+    "Network required FTE": "The people the arriving work needs, network "
+                            "wide, as whole-time equivalents averaged "
+                            "across the plan year. Each role is divided "
+                            "by its own productive hours, because the "
+                            "counter carries 21.75% shrinkage against the "
+                            "back office's 28%.",
+    "Overtime hours": "Overtime hours worked over the plan year to close "
+                      "gaps the roster could not.",
+    "Uncovered hours": "Required work nobody did, after overtime. Never "
+                       "netted against another team's spare capacity: a "
+                       "spare hour in one team does not staff another "
+                       "team's counter.",
+    "Requester turnaround, mean days": "How long a request takes from the "
+                                       "requester's point of view, "
+                                       "averaged over the plan year. Every "
+                                       "request counts once, and an item a "
+                                       "machine finished counts as "
+                                       "finished when the machine finished "
+                                       "it.",
+    "Weeks over the 5-day goal": "How many of the 52 plan weeks end with "
+                                 "projected turnaround above the goal in "
+                                 "assumptions.yaml. A count of weeks, not "
+                                 "a measure of how far over.",
+}
 
 # Which way is better, recorded once.
 #
@@ -118,6 +201,106 @@ def format_difference(difference, number_format):
         return NO_CHANGE
     sign = "+" if difference > 0 else "-"
     return sign + format_value(abs(difference), number_format)
+
+
+# ---------------------------------------------------------------------------
+# The landing intro (7d, 11/17)
+#
+# WHAT IT IS FOR. A visitor arrives knowing nothing: not what operation
+# this is, not that it is invented, not which of three views to open.
+# Three lines answer those in the order they are asked - what this is,
+# what it found, how to use it - and then get out of the way.
+#
+# EVERY FIGURE IN IT IS READ FROM THE SAVED RESULTS. A headline typed
+# into a page is a headline that goes stale the first time the model is
+# rebuilt, and the stale version is the one a visitor quotes. So the
+# biggest risk is FOUND - the risk-kind run whose all-in cost rises most
+# against the baseline - and its two figures come off that run's own
+# summary row.
+# ---------------------------------------------------------------------------
+
+MILLION = 1_000_000
+
+
+def format_millions(value):
+    """A signed figure in millions, to two decimals: "+$1.06M".
+
+    For the intro only, where a full-precision dollar figure would be
+    nine characters of noise in a sentence. Everywhere a reader might do
+    arithmetic on it, the figure is written in full.
+    """
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}${abs(value) / MILLION:,.2f}M"
+
+
+def headline_risk(results):
+    """The run the Summary tab leads with, and its two headline figures.
+
+    WHOSE CLAIM "BIGGEST RISK" IS. Siri's. export.HEADLINES is her
+    approved finding per run, in the order the Summary tab puts them, and
+    the first of them is the one the workbook leads with: "The biggest
+    risk in the plan: +$1.06M, and turnaround misses the 5-day goal in 27
+    weeks."
+
+    An earlier draft of this worked "biggest" out instead - the
+    risk-kind run whose all-in cost rose most - and it answered
+    Combined, which is +15% volume AND an automation programme together.
+    Arithmetically true, editorially wrong: Combined is a compound run,
+    and the project's own finding names the volume rise as the single
+    biggest risk. So the SELECTION is read from Siri's ordered findings,
+    the FIGURES are read from the saved results, and the word "risk" is
+    the run's own declared kind - checked here, because a sentence that
+    called a choice a risk would be the page editorialising.
+    """
+    runs = results["scenarios"]
+    lead_name = export.HEADLINES[0][0]
+    found = [
+        (key, run) for key, run in runs.items() if run["name"] == lead_name
+    ]
+    if not found:
+        raise ValueError(
+            f"the Summary's lead finding is about {lead_name!r}, which is "
+            "not among the saved runs"
+        )
+    key, run = found[0]
+    if run["kind"] != scenarios.KIND_RISK:
+        raise ValueError(
+            f"{lead_name} declares itself a {run['kind']}, so the intro "
+            "cannot call it the biggest risk in the plan"
+        )
+    baseline = float(runs[BASELINE_KEY]["summary"]["total_cost"])
+    return {
+        "key": key,
+        "name": run["name"],
+        "finding": findings().get(run["name"], ""),
+        "cost_rise": float(run["summary"]["total_cost"]) - baseline,
+        "weeks_over_goal": int(run["summary"]["weeks_over_turnaround_goal"]),
+    }
+
+
+def intro_lines(results, dimensions=None):
+    """The three lines above everything: what, what it found, how to use.
+
+    Three, and no more: a landing paragraph a visitor has to read before
+    they can start is a landing paragraph they skip.
+    """
+    dimensions = dimensions if dimensions is not None else api.dimensions()
+    risk = headline_risk(results)
+    sites = len(dimensions["sites"])
+    return (
+        f"**What this is:** a workforce capacity model of Northbrook "
+        f"Records Services, a fictional {sites}-site medical-records "
+        f"operation. Every figure on this page is synthetic - generated "
+        f"by the model from the inputs in this repository.",
+        f"**The headline finding:** {risk['name']} is the biggest risk in "
+        f"the plan - {format_millions(risk['cost_rise'])} over the plan "
+        f"year, and {risk['weeks_over_goal']} weeks over the turnaround "
+        f"goal.",
+        f"**How to use it:** {ONE_RUN_VIEW.lower()} shows one of the "
+        f"{results['meta']['scenario_count']} saved runs against the "
+        f"baseline, {COMPARE_VIEW.lower()} ranks them all by cost, and "
+        f"{BUILD_VIEW.lower()} puts your own inputs through the model.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -320,22 +503,42 @@ def exact_difference_text(difference):
     return written
 
 
-def card_tooltip(card):
-    """What the hover says: the exact difference, always.
+def measure_note(label):
+    """What a measure IS, in plain words, or "" if nothing is written.
 
-    Nothing a card rounds away is lost - a reader who wants to know
-    whether "no change" means nothing moved or merely nothing that shows
-    can find out without leaving the page.
+    One note per measure (7d), shared by the card hovers and the
+    comparison table's column hovers. A measure with no note would be a
+    figure a reader has to guess at, so a test requires one for every
+    card and every column.
     """
+    return MEASURE_NOTES.get(label, "")
+
+
+def card_tooltip(card):
+    """What the hover says: what the measure is, then the exact difference.
+
+    TWO THINGS, in that order (7d, 11/17). The note says what the figure
+    means, which is the question a visitor has first and which the card's
+    label alone cannot answer - "Network required FTE" is a term of art.
+    Then the difference as it actually is, so nothing a card rounds away
+    is lost: a reader who wants to know whether "no change" means nothing
+    moved or merely nothing that shows can find out without leaving the
+    page.
+    """
+    note = measure_note(card["label"])
+    lead = f"{card['label']}: {note}" if note else f"{card['label']}."
     if card["difference"] is None:
-        return f"{card['label']}: this is the baseline, so there is nothing to compare it against."
+        return (
+            f"{lead} This is the baseline, so there is nothing to compare "
+            "it against."
+        )
     exact = exact_difference_text(card["difference"])
     if card["no_change"]:
         return (
-            f"{card['label']}: {exact} against the baseline, which rounds "
-            f"to nothing at the precision shown."
+            f"{lead} Against the baseline: {exact}, which rounds to "
+            "nothing at the precision shown."
         )
-    return f"{card['label']}: {exact} against the baseline."
+    return f"{lead} Against the baseline: {exact}."
 
 
 def card_html(card):
@@ -413,6 +616,31 @@ def comparison_table(results):
     return table.sort_values(DIFFERENCE_HEADER).reset_index(drop=True)
 
 
+def comparison_column_specs(table):
+    """One spec per column of the comparison table (7d, 11/17).
+
+    Same shape as plan_column_specs, and for the same two reasons. The
+    figures are written the way the cards write them - before this the
+    table printed raw numbers, so the all-in cost read "$7,456,636" on a
+    card and "7456636" here. And every column carries the plain-language
+    note for its measure, which is the SAME note the card's hover gives,
+    so the two views cannot explain one figure two ways.
+    """
+    specs = []
+    for header in table.columns:
+        number_format = SCENARIO_FORMATS.get(header)
+        note = MEASURE_NOTES.get(header, "")
+        specs.append(
+            {
+                "column": header,
+                "label": header,
+                "help": note,
+                "format": SCREEN_NUMBER_FORMATS.get(number_format, TEXT_COLUMN),
+            }
+        )
+    return specs
+
+
 def comparison_display(table):
     """The same table, rounded the way the workbook's tab prints it."""
     rounded = table.copy()
@@ -433,6 +661,34 @@ NETWORK_KIND = "network"
 CLUSTER_KIND = "cluster"
 SITE_KIND = "site"
 NETWORK_LABEL = "Network (every site and the back office)"
+
+# The hover text for the view switcher and the two filters (7d, 11/17).
+# Written here beside the choices they explain, so the page cannot
+# describe a filter one way while this module builds it another.
+VIEW_HELP = (
+    f"Three ways in. {ONE_RUN_VIEW}: one saved run against the baseline, "
+    f"with its chart and its rows. {COMPARE_VIEW}: every run at once, "
+    f"ranked by what it does to the all-in cost. {BUILD_VIEW}: set the "
+    "inputs yourself and run the model on them."
+)
+RUN_HELP = (
+    "Which saved run to look at. The baseline first, because everything "
+    "else is measured against it; then the eight the workbook's Summary "
+    "headlines; then the rest. The line under each name is the kind the "
+    "run declares itself to be."
+)
+SCOPE_HELP = (
+    "How much of the network the chart and the table below cover: "
+    "everything, one cluster of sites, or one site. The cards above are "
+    "always network-wide, because that is what the workbook's Summary "
+    "reports."
+)
+ROLES_HELP = (
+    "Which roles the chart and the table below count. Shortfall is added "
+    "up over the roles picked and never netted against another role's "
+    "spare capacity, so unticking a role removes its shortfall rather "
+    "than moving it somewhere else."
+)
 
 
 def scope_choices(dimensions):
@@ -552,7 +808,16 @@ def weekly_gap(results, key, role_codes=None, scopes=None):
     return chart
 
 
-COST_HALVES = (("Labour", "labour_cost"), ("Machine", "machine_cost"))
+# The workbook's own names for the two halves (7d, 11/17): the Capacity
+# Scenarios tab calls them Labour cost and Machine cost, and so does the
+# comparison table, so the legend on this chart calls them that too.
+LABOUR_HEADER = "Labour cost"
+MACHINE_HEADER = "Machine cost"
+
+COST_HALVES = (
+    (LABOUR_HEADER, "labour_cost"),
+    (MACHINE_HEADER, "machine_cost"),
+)
 
 
 def cost_split(results, key):
@@ -598,8 +863,8 @@ def cost_split(results, key):
 
 RUN_HEADER = "Run"
 SHORT_FTE_HEADER = "Short FTE"
-COST_HEADER = "Plan-year cost"
-COST_HALF_HEADER = "Half"
+COST_HEADER = ALL_IN_HEADER
+COST_HALF_HEADER = "Half of the all-in cost"
 CHART_HEIGHT = 320
 
 # A chart that fits its data exactly puts the top point on the frame. A
@@ -639,12 +904,23 @@ def _locked_x(field, plan_weeks):
     )
 
 
+# The axis tick labels, in the same precision the cards and tables use
+# (7d, 11/17). Vega-Lite's default would have written the cost axis in
+# SI units - "1.5M" against a card reading "$1,456,636" - which is the
+# same figure in two notations on one screen.
+AXIS_FORMATS = {
+    SHORT_FTE_HEADER: ",.2f",   # FTE to two decimals, as everywhere else
+    COST_HEADER: "$,.0f",       # dollars to the dollar, as on the cards
+}
+
+
 def _locked_y(field, title, top):
-    """Zero to a round top, fixed, and not draggable."""
+    """Zero to a round top, fixed, not draggable, labelled as elsewhere."""
     return alt.Y(
         f"{field}:Q",
         title=title,
         scale=alt.Scale(domain=[0, top], nice=False, clamp=True),
+        axis=alt.Axis(format=AXIS_FORMATS.get(title)),
     )
 
 
@@ -917,18 +1193,10 @@ PLAN_COLUMNS = (
 # How each column is written on screen. Streamlit takes a printf string,
 # so the precision is still the workbook's (hours to a tenth, FTE to a
 # hundredth) - what changes is the thousands separator and the percent
-# sign, which cost nothing and save a reader doing the conversion.
-PLAN_NUMBER_FORMATS = {
-    export.COUNT: "%d",
-    export.HOURS: "%,.1f",
-    export.FTE: "%,.2f",
-    export.DAYS: "%,.2f",
-    export.PERCENT: "percent",
-    export.MONEY: "$%,.0f",
-}
-
-TEXT_COLUMN = "text"
-
+# sign, which cost nothing and save a reader doing the conversion. The
+# table is shared with the comparison view (7d), so one measure is
+# written one way wherever it appears.
+PLAN_NUMBER_FORMATS = SCREEN_NUMBER_FORMATS
 
 def full_names_note():
     """'Tier 1 is Remote Fulfillment Specialist, Tier 1', and so on.

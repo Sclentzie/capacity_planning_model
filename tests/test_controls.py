@@ -787,6 +787,20 @@ def test_a_share_outside_nought_to_a_hundred_is_refused():
     assert controls.guard("automation.uptime", 0.9) == 0.9
 
 
+def test_an_uplift_keeps_its_hundred_per_cent_cap():
+    """Siri 11/17: the uplifts stay shares. An escalation uplift above
+    100% would mean a contact that tried AI first takes more than twice
+    as long as an average one, which is not a planning assumption - and
+    the slider that offers it on the panel stops at 25%.
+    """
+    assert controls.input_rule("scenario.deflection.escalation_uplift") == (
+        controls.SHARE_RULE
+    )
+    with pytest.raises(ValueError, match="between 0% and 100%"):
+        controls.guard("automation.extra_uplift", 1.5)
+    assert controls.guard("automation.extra_uplift", 0.05) == 0.05
+
+
 def test_an_amount_cannot_be_negative():
     for path, value in (
         ("supply.roles.tier_1.hourly_cost", -28),
@@ -799,12 +813,24 @@ def test_an_amount_cannot_be_negative():
     assert controls.guard("supply.roles.tier_1.hourly_cost", 0) == 0
 
 
-def test_a_multiplier_has_to_be_above_zero():
-    with pytest.raises(ValueError, match="above zero"):
-        controls.guard("scenario.demand_multiplier", 0)
-    with pytest.raises(ValueError, match="above zero"):
+def test_a_multiplier_cannot_be_negative_but_may_be_zero():
+    """Siri 11/17. Zero was refused in the first build, on the reasoning
+    that a multiplier of nothing is meaningless. It is not: attrition at
+    zero is "nobody leaves", and the Supply slider has offered it since
+    7c - a text box that refused what the slider beside it allows would
+    have been the page contradicting itself.
+    """
+    with pytest.raises(ValueError, match="cannot be negative"):
         controls.guard("demand.holiday.factor", -0.5)
+    assert controls.guard("scenario.attrition_multiplier", 0) == 0
     assert controls.guard("demand.holiday.factor", 0.6) == 0.6
+
+    # And the slider really does offer it, which is what this agrees with.
+    catalogue = controls.catalogue()
+    attrition = next(
+        c for c in catalogue if c["key"] == "attrition_multiplier"
+    )
+    assert attrition["minimum"] == 0.0
 
 
 def test_a_value_with_no_range_to_be_outside_of_is_left_alone():

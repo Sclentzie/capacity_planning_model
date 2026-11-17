@@ -124,6 +124,13 @@ It opens in a browser and reads the saved results in
 `app/data/scenario_results_SYNTHETIC.json.gz` — all 21 runs, so the page loads
 in under a second instead of waiting out the model.
 
+Every view opens with three lines above the picker: what this is (a capacity
+model of a fictional six-site records operation, on synthetic data), the
+headline finding, and how to use the page. The figures in that finding are read
+from the saved results rather than written into the page, so the headline
+cannot go stale while the page still prints it — and a test checks them against
+both the saved summary rows and the workbook's approved sentence for that run.
+
 There are three views. **One run**: pick a run in the sidebar — the baseline
 first, then the eight the Summary tab headlines, then the rest — and filter to
 the network, a cluster or a site, and to the roles inside it. The page shows the
@@ -153,7 +160,8 @@ refused before the run starts, and a combination the model rejects (two rates
 over 100%, say) comes back with the model's own sentence. Because a text box
 has no ends where a slider has them, the box also holds a value to the kind of
 number its name says it is: a share or a rate between 0% and 100%, hours,
-counts and costs not negative, a multiplier above zero. These are rules about
+counts and costs not negative, a multiplier not negative either (zero is
+allowed: on an attrition multiplier it means nobody leaves). These are rules about
 kinds, not bounds on each input — nothing is added to the YAML. A value more
 than three times its baseline, or under a third of it, is allowed and warned
 about in yellow: outside the range this model was tested in.
@@ -172,6 +180,15 @@ without them would be unreadable a week later. Its results are shown through
 the same cards, charts and table as a saved run, so the two cannot be reported
 differently. A test sets the controls to five scenario files' inputs and
 checks the figures come back as those scenarios', to the cent.
+
+**One name, one format, one explanation per measure.** A measure is written the
+same way wherever it appears — dollars whole, FTE to two decimals, hours to one,
+days to two — from one table of formats shared by the cards, both tables and the
+chart axes, and it is called what the workbook calls it. Each measure also has
+one plain-language sentence saying what it is, and that same sentence is the
+hover on the card and on the comparison table's column header. Every filter,
+control and button on the page carries help text too, which a test checks by
+walking the real page rather than by listing them.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -225,7 +242,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 789 tests, about 85 minutes
+# The validation checks: 803 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -265,7 +282,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-789 tests across 24 files, all passing. Every validation check in the
+803 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference

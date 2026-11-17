@@ -496,9 +496,11 @@ def test_the_gap_chart_follows_the_filters(results, dimensions):
 def test_the_cost_chart_keeps_the_machine_half_even_when_it_is_zero(results):
     """Two bars have to measure the same thing to be comparable."""
     split = views.cost_split(results, "central_phones")
-    assert list(split.columns) == ["Labour", "Machine"]
+    # The workbook's own names for the two halves since 7d, so the
+    # legend here and the columns of the comparison table agree.
+    assert list(split.columns) == ["Labour cost", "Machine cost"]
     assert list(split.index) == ["Baseline", "Centralized phones"]
-    assert float(split.loc["Baseline", "Machine"]) == 0.0
+    assert float(split.loc["Baseline", "Machine cost"]) == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -992,3 +994,259 @@ def test_the_page_offers_the_csv_download(dimensions):
     buttons = app.get("download_button")
     assert len(buttons) == 1
     assert "synthetic" in buttons[0].label.lower()
+
+
+# ---------------------------------------------------------------------------
+# The landing intro (7d, 11/17)
+# ---------------------------------------------------------------------------
+
+
+def test_the_intro_is_three_lines_and_says_what_this_is(results, dimensions):
+    """Three, and no more: a landing paragraph a visitor has to read
+    before they can start is a landing paragraph they skip.
+    """
+    lines = views.intro_lines(results, dimensions)
+    assert len(lines) == 3
+    what, finding, how = lines
+
+    # What this is, including that none of it is real.
+    assert "Northbrook Records Services" in what
+    assert "fictional" in what
+    assert "synthetic" in what.lower()
+    assert f"{len(dimensions['sites'])}-site" in what
+    # And how to use it names the three views and the number of runs.
+    assert str(results["meta"]["scenario_count"]) in how
+    assert finding
+
+
+def test_the_intro_s_headline_figures_are_the_saved_results(results):
+    """A headline typed into a page goes stale the first time the model
+    is rebuilt, and the stale version is the one a visitor quotes. Both
+    figures are checked against the saved summary rows here, and against
+    Siri's approved sentence for that run - if a rebuild moved the cost,
+    this fails, which is the loudest way for it to say that the finding
+    needs rewriting too.
+    """
+    risk = views.headline_risk(results)
+    summary = results["scenarios"][risk["key"]]["summary"]
+    baseline = results["scenarios"][views.BASELINE_KEY]["summary"]
+
+    expected_rise = float(summary["total_cost"]) - float(baseline["total_cost"])
+    assert risk["cost_rise"] == pytest.approx(expected_rise, abs=A_CENT)
+    assert risk["weeks_over_goal"] == int(summary["weeks_over_turnaround_goal"])
+
+    money = views.format_millions(risk["cost_rise"])
+    weeks = str(risk["weeks_over_goal"])
+    line = views.intro_lines(results)[1]
+    assert risk["name"] in line
+    assert money in line
+    assert f"{weeks} weeks" in line
+    # The same two figures as the workbook's approved finding for the run.
+    assert money.lstrip("+") in risk["finding"]
+    assert weeks in risk["finding"]
+
+
+def test_the_headline_risk_is_the_run_the_summary_leads_with(results):
+    """The claim "biggest risk" is Siri's, not the page's: it is read
+    from the order of her approved findings, and the word "risk" is the
+    run's own declared kind.
+    """
+    risk = views.headline_risk(results)
+    assert risk["name"] == export.HEADLINES[0][0]
+    assert results["scenarios"][risk["key"]]["kind"] == scenarios.KIND_RISK
+
+
+def test_the_intro_is_the_first_thing_on_every_view(results, dimensions):
+    """Above the picker, on all three views - a visitor who arrives on
+    the comparison view needs the same three lines.
+    """
+    expected = views.intro_lines(results, dimensions)
+    app = app_test().run()
+    for view in views.VIEW_ORDER:
+        view_picker(app).set_value(view).run()
+        assert not app.exception
+        shown = [str(block.value) for block in app.markdown]
+        for line in expected:
+            assert line in shown, f"{view}: intro line missing"
+
+
+def test_the_intro_names_the_views_the_sidebar_offers(results):
+    """The sentence points at the radio buttons, so the names have to be
+    the radio buttons' names. They come from one place for that reason.
+    """
+    how = views.intro_lines(results)[2]
+    app = app_test().run()
+    offered = set(view_picker(app).options)
+    assert offered == set(views.VIEW_ORDER)
+    for name in views.VIEW_ORDER:
+        assert name.lower() in how.lower()
+
+
+# ---------------------------------------------------------------------------
+# One name, one format, one explanation per measure (7d, 11/17)
+# ---------------------------------------------------------------------------
+
+
+def test_the_stated_precisions_are_the_ones_used(results):
+    """Siri 11/17: dollars whole, FTE to two decimals, hours to one,
+    days to two. Pinned here so a later change to a format table has to
+    be deliberate.
+    """
+    assert views.DISPLAY_DECIMALS[export.MONEY] == 0
+    assert views.DISPLAY_DECIMALS[export.FTE] == 2
+    assert views.DISPLAY_DECIMALS[export.HOURS] == 1
+    assert views.DISPLAY_DECIMALS[export.DAYS] == 2
+
+    assert views.format_value(1234567.89, export.MONEY) == "$1,234,568"
+    assert views.format_value(12.345, export.FTE) == "12.35"
+    assert views.format_value(1234.56, export.HOURS) == "1,234.6"
+    assert views.format_value(4.567, export.DAYS) == "4.57"
+
+
+def test_one_measure_is_written_one_way_in_every_view(results):
+    """The card, the comparison table and the detail table all write a
+    figure through the same format table, so the all-in cost cannot read
+    "$7,456,636" on a card and "7456636" in the view beside it.
+    """
+    table = views.comparison_table(results)
+    comparison = {
+        spec["column"]: spec["format"]
+        for spec in views.comparison_column_specs(table)
+    }
+    plan = {
+        spec["column"]: spec["format"] for spec in views.plan_column_specs()
+    }
+
+    # Every column of both tables is written, not left as a raw float.
+    assert all(comparison.values())
+    assert all(plan.values())
+
+    # The measures the two tables share are written identically.
+    shared = set(comparison) & set(plan)
+    assert shared, "the two tables share no measure, so nothing is checked"
+    for header in shared:
+        assert comparison[header] == plan[header], header
+
+    # And a card's own format is the one the comparison table uses.
+    for measure, number_format, _direction in views.CARD_MEASURES:
+        header = views.MEASURE_HEADERS[measure]
+        assert comparison[header] == views.SCREEN_NUMBER_FORMATS[number_format]
+
+
+def test_one_measure_is_called_one_thing_in_every_view(results):
+    """The cards take the workbook's headers; so do the comparison
+    table's columns, the chart axes and the two halves of the cost bar.
+    """
+    headers = {header for header, _key in api.COMPARISON_MEASURES}
+    for measure, _format, _direction in views.CARD_MEASURES:
+        assert views.MEASURE_HEADERS[measure] in headers
+
+    # The chart axes are measures too, and they are named as the
+    # workbook names them.
+    plan_headers = {
+        header for header, _source, _f, _w, _t in export.CAPACITY_PLAN_COLUMNS
+    }
+    assert views.SHORT_FTE_HEADER in plan_headers
+    assert views.COST_HEADER == views.ALL_IN_HEADER
+    assert views.COST_HEADER in headers
+    assert views.LABOUR_HEADER in headers
+    assert views.MACHINE_HEADER in headers
+    assert [label for label, _measure in views.COST_HALVES] == [
+        views.LABOUR_HEADER, views.MACHINE_HEADER
+    ]
+
+
+def test_every_card_says_what_its_measure_is(results):
+    """Plain-language help on every card (7d). "Network required FTE" is
+    a term of art, and a label alone cannot explain it.
+    """
+    for key in results["scenarios"]:
+        for card in views.headline_cards(results, key):
+            note = views.measure_note(card["label"])
+            assert note, f"{card['label']}: no note"
+            assert note.endswith("."), card["label"]
+            tooltip = views.card_tooltip(card)
+            assert note in tooltip
+            # The exact difference is still there, as 7b promised.
+            if card["difference"] is not None:
+                assert views.exact_difference_text(card["difference"]) in tooltip
+
+
+def test_every_comparison_column_says_what_its_measure_is(results):
+    """The same note as the card's, so the two views cannot explain one
+    figure two different ways.
+    """
+    table = views.comparison_table(results)
+    for spec in views.comparison_column_specs(table):
+        assert spec["help"], f"{spec['column']}: no note"
+        assert spec["help"] == views.MEASURE_NOTES[spec["column"]]
+    assert views.KIND_HEADER in views.MEASURE_NOTES
+    assert views.DIFFERENCE_HEADER in views.MEASURE_NOTES
+
+    # A card and a column about the same measure share one sentence.
+    cost = next(
+        card for card in views.headline_cards(results, "volume_plus_15")
+        if card["label"] == views.ALL_IN_HEADER
+    )
+    note = next(
+        spec["help"] for spec in views.comparison_column_specs(table)
+        if spec["column"] == views.ALL_IN_HEADER
+    )
+    assert note in views.card_tooltip(cost)
+
+
+def test_every_plan_column_says_what_it_is(results):
+    """The detail table had these from 7b; checked here with the rest so
+    one test covers the promise across all three views.
+    """
+    for spec in views.plan_column_specs():
+        assert spec["help"], spec["column"]
+        assert spec["column"] in spec["help"]
+
+
+def test_the_chart_axes_are_written_like_the_cards(results):
+    """A cost axis in SI units - "1.5M" against a card reading
+    "$1,456,636" - is one figure in two notations on one screen.
+    """
+    gap = views.gap_chart(views.weekly_gap(results, "volume_plus_15"), 52)
+    cost = views.cost_chart(views.cost_split(results, "volume_plus_15"))
+    assert gap.to_dict()["encoding"]["y"]["axis"]["format"] == ",.2f"
+    assert cost.to_dict()["encoding"]["y"]["axis"]["format"] == "$,.0f"
+    # Still locked: adding an axis format must not add an interaction.
+    assert views.chart_is_locked(gap)
+    assert views.chart_is_locked(cost)
+
+
+HELP_KINDS = (
+    "radio", "selectbox", "multiselect", "slider", "toggle", "number_input",
+    "time_input", "text_input", "button",
+)
+
+
+def test_every_card_filter_and_control_has_help_text(results):
+    """Siri 11/17, across all three views: nothing a reader can click or
+    drag is left unexplained.
+
+    Walked on the real page rather than listed here, so a widget added
+    later arrives with this test already pointed at it.
+    """
+    app = app_test().run()
+    missing = []
+    for view in views.VIEW_ORDER:
+        view_picker(app).set_value(view).run()
+        assert not app.exception
+        if view == views.BUILD_VIEW:
+            # The Advanced box draws three more widgets once something is
+            # searched for, so they are searched for.
+            widget(app, "text_input", "advanced_search").set_value(
+                "uptime"
+            ).run()
+        for kind in HELP_KINDS:
+            for element in getattr(app, kind):
+                if not getattr(element, "help", ""):
+                    missing.append((view, kind, element.label))
+        for element in app.main:
+            if type(element).__name__ == "DownloadButton":
+                if not getattr(element, "help", ""):
+                    missing.append((view, "download_button", element.label))
+    assert not missing, f"no help text: {missing}"

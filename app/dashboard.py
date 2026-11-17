@@ -55,10 +55,14 @@ RUN_KEY = "run"
 SCOPE_KEY = "scope"
 ROLES_KEY = "roles"
 
-ONE_RUN = "One run"
-COMPARE_ALL = "Compare all scenarios"
-BUILD_YOUR_OWN = "Build your own"
-VIEWS = (ONE_RUN, COMPARE_ALL, BUILD_YOUR_OWN)
+# The view names come from views, because the intro tells a visitor what
+# the views are called and the sidebar draws them (7d). Two copies would
+# have drifted by a word, and the sentence pointing at the radio button
+# would have stopped pointing at it.
+ONE_RUN = views.ONE_RUN_VIEW
+COMPARE_ALL = views.COMPARE_VIEW
+BUILD_YOUR_OWN = views.BUILD_VIEW
+VIEWS = views.VIEW_ORDER
 
 # The panel's own state, which has to outlive a rerun. Streamlit reruns
 # the whole script on every widget change, so what was run last is kept
@@ -93,6 +97,17 @@ def filter_dimensions():
 def current_inputs():
     """A fingerprint of the input files as they are on disk right now."""
     return api.inputs_fingerprint()
+
+
+def show_intro(results, dimensions):
+    """The three lines a visitor reads before anything else (7d).
+
+    What this is, what it found, how to use it - and then out of the way.
+    The figures in it are read from the saved results, so the headline
+    cannot go stale while the page still prints it.
+    """
+    for line in views.intro_lines(results, dimensions):
+        st.markdown(line)
 
 
 def synthetic_banner(meta):
@@ -155,6 +170,7 @@ def pick_run(results):
         format_func=lambda key: label_of[key],
         captions=captions,
         label_visibility="collapsed",
+        help=views.RUN_HELP,
         key=RUN_KEY,
     )
 
@@ -168,6 +184,7 @@ def pick_filters(dimensions):
         "Network, cluster or site",
         choices,
         format_func=lambda option: option["label"],
+        help=views.SCOPE_HELP,
         key=SCOPE_KEY,
     )
 
@@ -179,6 +196,7 @@ def pick_filters(dimensions):
         codes,
         default=codes,
         format_func=lambda code: name_of[code],
+        help=views.ROLES_HELP,
         key=ROLES_KEY,
     )
 
@@ -215,7 +233,8 @@ def show_cards(results, key):
         "these cards. Green moved the way a planner wants, red the other "
         "way, blue did not move at all - and a difference that rounds to "
         "nothing at the precision shown says so in words rather than "
-        "wearing an arrow. Hover a card for the exact difference."
+        "wearing an arrow. Hover a card for what the measure is and the "
+        "exact difference behind the rounding."
     )
     cards = views.headline_cards(results, key)
     st.markdown(views.CARD_STYLE, unsafe_allow_html=True)
@@ -257,6 +276,26 @@ def show_charts(results, key, choice, roles):
         "automation, and is shown anyway so the two bars measure the same "
         "thing. Network-wide, like the cards. Fixed axes, as above."
     )
+
+
+def comparison_column_config(table):
+    """The comparison table's columns as Streamlit column settings.
+
+    Same two jobs as plan_column_config: the figures are written the way
+    the cards write them, and every column carries its measure's own
+    plain-language note. Decided in views as plain data, so a test can
+    read both without starting a page.
+    """
+    config = {}
+    for spec in views.comparison_column_specs(table):
+        shared = {"label": spec["label"], "help": spec["help"]}
+        if spec["format"] == views.TEXT_COLUMN:
+            config[spec["column"]] = st.column_config.TextColumn(**shared)
+        else:
+            config[spec["column"]] = st.column_config.NumberColumn(
+                format=spec["format"], **shared
+            )
+    return config
 
 
 def plan_column_config():
@@ -332,6 +371,13 @@ def show_detail(results, key, choice, roles, changes=None):
         data=data,
         file_name=name,
         mime="text/csv",
+        help=(
+            "The rows above as a CSV, at full precision and under the "
+            "workbook's own column headers, so a downloaded row can be "
+            "matched to a row on the Capacity Plan tab. SYNTHETIC is in "
+            "the file name, because a file travels further than the page "
+            "it came from."
+        ),
         icon=":material/download:",
     )
     st.caption(note)
@@ -345,11 +391,18 @@ def show_comparison(results):
         "lists the same runs alphabetically on purpose - a reference table "
         "that ranks is editorialising - but a reader who opens this view is "
         "asking which runs save money, so here the answer is the first row. "
-        "Click a column header to sort by it."
+        "Click a column header to sort by it, or hover one to see what the "
+        "measure is - the same sentence the cards in the other view give."
     )
     table = views.comparison_table(results)
     st.dataframe(
-        views.comparison_display(table), hide_index=True, width="stretch"
+        views.comparison_display(table),
+        hide_index=True,
+        width="stretch",
+        # The same formats and the same per-measure notes the cards use
+        # (7d): before this the all-in cost read "$7,456,636" on a card
+        # and "7456636" here, which is one figure in two notations.
+        column_config=comparison_column_config(table),
     )
     st.caption(
         "KIND IS DECLARED BY THE RUN, not worked out here. A CHOICE is "
@@ -560,6 +613,14 @@ def draw_advanced():
             "Search the inputs",
             key=ADVANCED_SEARCH,
             placeholder="shrinkage, handle time, lead week, platform fee",
+            help=(
+                "Type part of a key - automation.uptime - or part of what "
+                "the input is for - shrinkage, handle time. The "
+                "description in the results is the comment "
+                "assumptions.yaml carries above that input, so it is the "
+                "project's own sentence rather than one written for this "
+                "box."
+            ),
         )
         found = controls.search_inputs(query) if query else []
 
@@ -582,13 +643,38 @@ def draw_advanced():
             )
             paths = [row["path"] for row in found]
             baseline_of = {row["path"]: row["baseline"] for row in found}
-            picked = st.selectbox("Input to change", paths, key=ADVANCED_PICK)
+            picked = st.selectbox(
+                "Input to change",
+                paths,
+                help=(
+                    "One of the inputs found above. Only single-value "
+                    "inputs are offered: a list is a table keyed by code, "
+                    "which a text box cannot change safely."
+                ),
+                key=ADVANCED_PICK,
+            )
             st.text_input(
                 f"New value (baseline {baseline_of[picked]!r})",
                 key=ADVANCED_VALUE,
+                help=(
+                    "Typed in the same units the baseline is in, so a "
+                    "share is 0.15 rather than 15. It has to be the kind "
+                    "of number the input is: a share or a rate between 0% "
+                    "and 100%, hours, counts and costs not negative, a "
+                    "multiplier not negative. A value more than three "
+                    "times the baseline, or under a third of it, is "
+                    "allowed and warned about."
+                ),
             )
             if st.button(
-                "Add this change", icon=":material/add:", key=ADVANCED_ADD
+                "Add this change",
+                icon=":material/add:",
+                help=(
+                    "Queues the change. It is checked now, so a value the "
+                    "model would refuse costs a message rather than a "
+                    "run, and it joins the next Run."
+                ),
+                key=ADVANCED_ADD,
             ):
                 typed = st.session_state.get(ADVANCED_VALUE, "")
                 try:
@@ -619,7 +705,12 @@ def draw_advanced():
             for path, value in sorted(queued.items()):
                 line, drop = st.columns([5, 1])
                 line.write(f"`{path}` = {value}")
-                if drop.button("Remove", key=f"drop_{path}"):
+                if drop.button(
+                    "Remove",
+                    help="Drop this change; the input goes back to its "
+                         "baseline.",
+                    key=f"drop_{path}",
+                ):
                     queued.pop(path)
                     st.rerun()
             # Allowed, and warned about: a value three times its baseline
@@ -759,10 +850,26 @@ def show_build_your_own(saved, dimensions):
 
     go, reset, _rest = st.columns([1, 1, 4])
     pressed = go.button(
-        "Run", type="primary", icon=":material/play_arrow:", key=RUN_BUTTON
+        "Run",
+        type="primary",
+        icon=":material/play_arrow:",
+        help=(
+            "Puts the controls below through the model: a full 52-week "
+            "plan year, about twenty-five seconds. Inputs you have "
+            "already run this session come back at once. Nothing runs "
+            "until you press this."
+        ),
+        key=RUN_BUTTON,
     )
     if reset.button(
-        "Reset to baseline", icon=":material/restart_alt:", key=RESET_BUTTON
+        "Reset to baseline",
+        icon=":material/restart_alt:",
+        help=(
+            "Every control back to the value assumptions.yaml gives it, "
+            "the Advanced changes cleared, and the runs remembered this "
+            "session forgotten."
+        ),
+        key=RESET_BUTTON,
     ):
         reset_panel(catalogue)
         st.rerun()
@@ -794,6 +901,11 @@ def main():
 
     results = saved_results()
     meta = results["meta"]
+    dimensions = filter_dimensions()
+
+    # The intro first, above the picker: a visitor arrives knowing
+    # neither what this operation is nor that it is invented (7d).
+    show_intro(results, dimensions)
 
     # The banner is drawn before anything else and on every view, because
     # a screenshot of either one travels on its own.
@@ -802,7 +914,11 @@ def main():
 
     st.sidebar.subheader("View")
     view = st.sidebar.radio(
-        "View", VIEWS, label_visibility="collapsed", key=VIEW_KEY
+        "View",
+        VIEWS,
+        label_visibility="collapsed",
+        help=views.VIEW_HELP,
+        key=VIEW_KEY,
     )
 
     if view == COMPARE_ALL:
@@ -819,10 +935,9 @@ def main():
         # The filters are drawn by the panel itself, under the controls
         # and above the result, because there is nothing to filter until
         # a run exists.
-        show_build_your_own(results, filter_dimensions())
+        show_build_your_own(results, dimensions)
         return
 
-    dimensions = filter_dimensions()
     key = pick_run(results)
     choice, roles = pick_filters(dimensions)
     st.sidebar.caption(

@@ -711,15 +711,23 @@ def window_problems(controls, values, assumptions=None):
 # WHAT THEY ARE NOT. They are not bounds on each input, which would be
 # an input-file change and Siri's to make. They are rules about what KIND
 # of number an input is, decided 11/17: a share or a rate lies between 0%
-# and 100%; hours, counts and costs cannot be negative; a multiplier is
-# above zero. The kind is read off the input's own name, and a test
-# checks that every input in the file passes the rule its name earns it -
-# which is what catches a name this classification reads wrongly.
+# and 100%; hours, counts and costs cannot be negative; and a multiplier
+# cannot be negative either. The kind is read off the input's own name,
+# and a test checks that every input in the file passes the rule its name
+# earns it - which is what catches a name this classification reads
+# wrongly.
+#
+# A MULTIPLIER MAY BE ZERO (Siri, 11/17). The first build refused it, on
+# the reasoning that a multiplier of nothing is meaningless. It is not:
+# `attrition_multiplier` at zero is "nobody leaves", which is a question
+# worth asking, and the Supply slider has offered it since 7c. A text box
+# that refused what the slider beside it allows would have been the page
+# contradicting itself.
 # ---------------------------------------------------------------------------
 
 SHARE_RULE = "share"
 NOT_NEGATIVE_RULE = "not negative"
-ABOVE_ZERO_RULE = "above zero"
+MULTIPLIER_RULE = "multiplier"
 
 # Read in this order: a multiplier first, because `attrition_multiplier`
 # carries an attrition word too and it is the multiplier that it is.
@@ -761,7 +769,7 @@ def _segment_rule(segment):
         return SHARE_RULE
     words = _words(segment)
     if words & set(MULTIPLIER_WORDS):
-        return ABOVE_ZERO_RULE
+        return MULTIPLIER_RULE
     if words & set(SHARE_WORDS):
         return SHARE_RULE
     if words & set(COUNT_WORDS):
@@ -807,10 +815,11 @@ def guard(path, value, rule=None):
             f"{path} is an amount - hours, a count or a cost - so it "
             f"cannot be negative. You typed {value:g}."
         )
-    if rule == ABOVE_ZERO_RULE and value <= 0:
+    if rule == MULTIPLIER_RULE and value < 0:
         raise ValueError(
-            f"{path} is a multiplier, so it has to be above zero. You "
-            f"typed {value:g}."
+            f"{path} is a multiplier, so it cannot be negative. Zero is "
+            f"allowed - on an attrition multiplier it means nobody "
+            f"leaves. You typed {value:g}."
         )
     return value
 
