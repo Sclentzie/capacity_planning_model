@@ -1371,6 +1371,38 @@ def test_no_colour_on_the_page_means_two_things(results):
     assert set(views.KIND_MARKDOWN.values()) <= {"violet", "orange", "gray"}
 
 
+def test_every_card_colour_passes_wcag_aa(results):
+    """Siri 11/19. The three began as Streamlit's own, and measuring them
+    for the theme pass showed two of them never reached AA as small text:
+    green at 2.8:1 and red at 3.4:1 against the page, and 3.0 and 3.7
+    against the white page they sat on before that. Looking like the rest
+    of the page is worth less than being readable, so the green and the
+    red are darker and the blue, which already passed, is untouched.
+
+    Held here rather than in a comment, because the next person to reach
+    for a brighter green should have to argue with a test.
+    """
+    page = THEME["backgroundColor"]
+    for name, colour in (
+        ("better", views.BETTER_COLOUR),
+        ("worse", views.WORSE_COLOUR),
+        ("no change", views.SAME_COLOUR),
+    ):
+        ratio = views.contrast_ratio(colour, page)
+        assert ratio >= views.AA_TEXT, f"{name} {colour} is {ratio:.2f}:1"
+
+    # Still three distinguishable colours, and still the three a reader
+    # was taught: a darker green is a green.
+    assert len({views.BETTER_COLOUR, views.WORSE_COLOUR, views.SAME_COLOUR}) == 3
+    for colour in (views.BETTER_COLOUR, views.WORSE_COLOUR, views.SAME_COLOUR):
+        red, green, blue = (int(colour[at:at + 2], 16) for at in (1, 3, 5))
+        assert max(red, green, blue) == {
+            views.BETTER_COLOUR: green,
+            views.WORSE_COLOUR: red,
+            views.SAME_COLOUR: blue,
+        }[colour], colour
+
+
 def test_a_card_never_leans_on_colour_alone(results):
     """Whatever the contrast of the three card colours, the card also
     says which way it moved in words or with an arrow - so a reader who

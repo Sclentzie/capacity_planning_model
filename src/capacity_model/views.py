@@ -443,10 +443,18 @@ def headline_cards(results, key):
 # used, with a third colour for no change at all.
 # ---------------------------------------------------------------------------
 
-# Streamlit's own three, so a card looks like the rest of the page.
-BETTER_COLOUR = "#09ab3b"   # green: moved the way a planner wants
-WORSE_COLOUR = "#ff2b2b"    # red:   moved the other way
-SAME_COLOUR = "#0068c9"     # blue:  did not move at all
+# Green, red and blue - DARKENED FOR CONTRAST (Siri, 11/19). These began
+# as Streamlit's own three, so that a card looked like the rest of the
+# page. Measuring them for the theme pass showed that two of the three
+# never reached WCAG AA as small text: Streamlit's green was 2.8:1 and
+# its red 3.4:1 against the page, and had been 3.0 and 3.7 against the
+# white page before it. Looking like the rest of the page is worth less
+# than being readable, so the green and the red are darker and the blue,
+# which already passed at 5.0:1, is untouched. A test holds all three to
+# AA on the page background.
+BETTER_COLOUR = "#077d2a"   # green: moved the way a planner wants, 4.8:1
+WORSE_COLOUR = "#c62828"    # red:   moved the other way, 5.1:1
+SAME_COLOUR = "#0068c9"     # blue:  did not move at all, 5.0:1
 
 DOWN_ARROW = "▼"
 UP_ARROW = "▲"

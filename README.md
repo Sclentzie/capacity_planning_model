@@ -201,8 +201,11 @@ back office, with a key beside the download button — and the scenario kinds ar
 violet, orange and gray. Every pair is held to WCAG AA by a test that computes
 the contrast ratio rather than trusting an eye: charcoal on the page is 13.8:1,
 a white label on a gunmetal button is 7.6:1, and the palest tint still carries
-charcoal text at 12.1:1. The tints are a thing done to the screen; the CSV is
-the same bytes it always was.
+charcoal text at 12.1:1. That measurement moved two of the card colours too:
+Streamlit's own green and red reached only 2.8:1 and 3.4:1 as small text, so the
+cards now use a darker green (`#077d2a`, 4.8:1) and a darker red (`#c62828`,
+5.1:1); the blue (`#0068c9`, 5.0:1) already passed. The tints are a thing done
+to the screen; the CSV is the same bytes it always was.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -258,7 +261,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 821 tests, about 85 minutes
+# The validation checks: 822 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -298,7 +301,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-821 tests across 24 files, all passing. Every validation check in the
+822 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference
