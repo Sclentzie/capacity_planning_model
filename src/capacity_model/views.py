@@ -653,6 +653,105 @@ def comparison_display(table):
     return rounded
 
 
+
+# ---------------------------------------------------------------------------
+# What a kind looks like (7d final pass, 11/19)
+#
+# WHY THESE THREE COLOURS AND NOT ANY OTHERS. Red, green and blue are
+# spoken for: on a card they mean worse, better and no change (11/16), so
+# a kind wearing one of them would be read as a verdict on the run. That
+# leaves violet, orange and gray - which happen to be the three colours
+# Streamlit's own markdown palette offers outside red, green and blue, so
+# the kind beside a run in the sidebar (where only markdown is allowed)
+# and the kind in the comparison table (where the Styler takes a hex) can
+# be the SAME colour rather than two colours that nearly match. The hexes
+# live in .streamlit/config.toml as violetColor, orangeColor and
+# grayColor, and a test checks the file and this table agree.
+#
+# Gray for a sensitivity is not an accident either: a sensitivity is not
+# a proposal, and a muted colour says so before the sentence does.
+# ---------------------------------------------------------------------------
+
+KIND_COLOURS = {
+    scenarios.KIND_CHOICE: "#5b3a8c",       # violet
+    scenarios.KIND_RISK: "#8a4b0a",         # orange
+    scenarios.KIND_SENSITIVITY: "#4f555e",  # gray
+}
+
+# The same three as Streamlit markdown colour names, for the places that
+# take markdown and not HTML - a radio's captions, above all.
+KIND_MARKDOWN = {
+    scenarios.KIND_CHOICE: "violet",
+    scenarios.KIND_RISK: "orange",
+    scenarios.KIND_SENSITIVITY: "gray",
+}
+
+# One line each, which is what the key table carries. These are the three
+# sentences the Compare-all caption used to spell out in a paragraph.
+KIND_MEANINGS = {
+    scenarios.KIND_CHOICE:
+        "Something the operation could decide to do.",
+    scenarios.KIND_RISK:
+        "Something that could happen to it, which nobody is proposing.",
+    scenarios.KIND_SENSITIVITY:
+        "Varies one input of another run, to test whether its finding "
+        "holds - not a proposal of its own.",
+}
+
+
+def kind_colour(kind):
+    """The hex a kind is written in, or None for a kind nobody declared."""
+    return KIND_COLOURS.get(kind)
+
+
+def kind_markdown(kind):
+    """A kind's label in Streamlit markdown, coloured: ":violet[Choice]".
+
+    For the sidebar captions, which take markdown and not HTML. The
+    colour name resolves to the hex in .streamlit/config.toml, so this
+    and the comparison table are the same colour by construction rather
+    than by two people choosing the same swatch.
+    """
+    label = kind_label(kind)
+    name = KIND_MARKDOWN.get(kind)
+    return f":{name}[{label}]" if name else label
+
+
+def kind_key_rows():
+    """The kind key: one row per kind, in the order a reader meets them."""
+    return [
+        {
+            "kind": kind,
+            "label": kind_label(kind),
+            "colour": KIND_COLOURS[kind],
+            "meaning": KIND_MEANINGS[kind],
+        }
+        for kind in scenarios.KINDS
+    ]
+
+
+def comparison_styler(table):
+    """The comparison table with each run's kind in its kind's colour.
+
+    The Kind column only. Streamlit takes the colours from a Styler and
+    its own column_config still decides every number's format, which is
+    what keeps 7d's one-format-per-measure rule true here.
+    """
+    colour_of = {kind_label(kind): colour for kind, colour in KIND_COLOURS.items()}
+
+    def paint(column):
+        return [
+            f"color: {colour_of[value]}; font-weight: 600"
+            if value in colour_of else ""
+            for value in column
+        ]
+
+    shown = comparison_display(table)
+    if KIND_HEADER not in shown.columns:
+        return shown.style
+    return shown.style.apply(paint, subset=[KIND_HEADER])
+
+
 # ---------------------------------------------------------------------------
 # Filters
 # ---------------------------------------------------------------------------
@@ -1041,6 +1140,7 @@ def plan_view(plan):
 
 
 ROLE_HEADER = "Role"
+SCOPE_HEADER = "Site or scope"
 
 
 @functools.lru_cache(maxsize=1)
@@ -1255,6 +1355,194 @@ def plan_column_specs():
             }
         )
     return specs
+
+
+
+# ---------------------------------------------------------------------------
+# Which region a row belongs to, and its tint (7d final pass, 11/19)
+#
+# WHY TINT THE ROWS AT ALL. The detail table is 780 rows of three
+# different things stacked: the North sites, the South sites, and the
+# back office, which is not at a site at all. Sorted by week, those
+# interleave, and a reader scanning for "what happened at the South
+# counter" has to read the Scope column on every line. A tint does that
+# reading for them.
+#
+# WHY NOT RED, GREEN OR BLUE. Those three are spoken for on the cards -
+# worse, better, no change - so a tinted row in one of them would look
+# like a verdict on that row. These three are very pale (every one keeps
+# charcoal text above 12:1, far past AA) and carry no meaning of their
+# own beyond "same region".
+#
+# THE DOWNLOAD IS NOT TOUCHED. A tint is a thing done to a screen; the
+# CSV is the same bytes it was, which a test checks.
+# ---------------------------------------------------------------------------
+
+NETWORK_REGION = "network"
+
+REGION_TINTS = {
+    "north": "#f3ecdf",          # warm sand
+    "south": "#eae6f2",          # pale lilac
+    NETWORK_REGION: "#e5e6e8",   # pale neutral gray
+}
+
+REGION_FALLBACK_TINT = "#ffffff"
+
+
+def region_of(scope, dimensions=None):
+    """Which region one plan row's scope sits in.
+
+    A site code answers to its cluster; NETWORK answers to itself,
+    because the back-office teams work every site's queue remotely and
+    are not at any of them (spec 6.7). Read from the loaded dimensions
+    rather than from the letter the code starts with, so a site added to
+    sites.yaml lands in its real cluster.
+    """
+    dimensions = dimensions if dimensions is not None else api.dimensions()
+    if scope == dimensions["network_code"]:
+        return NETWORK_REGION
+    for cluster in dimensions["clusters"]:
+        if scope in cluster["sites"]:
+            return cluster["code"]
+    return None
+
+
+def region_key_rows(dimensions=None):
+    """The region key: label, tint and what the tint covers."""
+    dimensions = dimensions if dimensions is not None else api.dimensions()
+    rows = []
+    for cluster in dimensions["clusters"]:
+        rows.append(
+            {
+                "region": cluster["code"],
+                "label": cluster["name"],
+                "colour": REGION_TINTS.get(cluster["code"], REGION_FALLBACK_TINT),
+                "meaning": ", ".join(cluster["sites"]),
+            }
+        )
+    rows.append(
+        {
+            "region": NETWORK_REGION,
+            "label": f"{dimensions['network_code']} (back office)",
+            "colour": REGION_TINTS[NETWORK_REGION],
+            "meaning": ", ".join(
+                role["short_name"] for role in network_roles(dimensions)
+            ),
+        }
+    )
+    return rows
+
+
+def row_tints(view, dimensions=None):
+    """One tint per row of the plan view, in the view's own order."""
+    dimensions = dimensions if dimensions is not None else api.dimensions()
+    return [
+        REGION_TINTS.get(region_of(scope, dimensions), REGION_FALLBACK_TINT)
+        for scope in view[SCOPE_HEADER]
+    ]
+
+
+def plan_styler(view, dimensions=None, names=None):
+    """The plan view, rounded and named for a reader, tinted by region.
+
+    Streamlit takes the colours from a Styler and keeps its own
+    column_config for every number's format - its words: "Text and
+    number formatting from column_config always takes precedence over
+    text and number formatting from pandas.Styler" - so the tints cannot
+    quietly undo 7d's one-format-per-measure rule.
+    """
+    shown = plan_display(view, names=names)
+    if SCOPE_HEADER not in view.columns:
+        return shown.style
+    # Keyed by the index LABEL rather than by position: pandas hands
+    # `apply(axis=1)` a row whose .name is its label, and a view that
+    # arrived with anything but a 0..n index would otherwise be tinted
+    # off by however much the labels differ.
+    tint_of = dict(zip(view.index, row_tints(view, dimensions)))
+
+    def paint(row):
+        return [f"background-color: {tint_of[row.name]}"] * len(row)
+
+    return shown.style.apply(paint, axis=1)
+
+
+# ---------------------------------------------------------------------------
+# The two colour keys, and whether their colours can be read (11/19)
+# ---------------------------------------------------------------------------
+
+KEY_STYLE = """<style>
+.cm-key { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem;
+          font-size: 0.8125rem; line-height: 1.5; }
+.cm-key-item { display: flex; align-items: center; gap: 0.4rem; }
+.cm-swatch { width: 0.85rem; height: 0.85rem; border-radius: 0.2rem;
+             border: 1px solid rgba(0, 0, 0, 0.25); flex: none; }
+.cm-key-table { border-collapse: collapse; font-size: 0.8125rem; }
+.cm-key-table td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
+</style>"""
+
+
+def region_key_html(rows):
+    """The region key, as a line of swatches beside the download."""
+    items = "".join(
+        f'<div class="cm-key-item">'
+        f'<span class="cm-swatch" style="background: {row["colour"]};"></span>'
+        f'<span>{html.escape(row["label"])}</span></div>'
+        for row in rows
+    )
+    return f'<div class="cm-key">{items}</div>'
+
+
+def kind_key_html(rows):
+    """The kind key: a swatch, the kind, and one line of what it means.
+
+    A table rather than a paragraph (11/19). The paragraph said the same
+    three things and nobody read it, because a reader scanning a ranked
+    list wants to know what the word beside a run means, not to be
+    taught a taxonomy.
+    """
+    body = "".join(
+        f"<tr>"
+        f'<td><span class="cm-swatch" style="background: {row["colour"]};">'
+        f"</span></td>"
+        f'<td style="color: {row["colour"]}; font-weight: 600;">'
+        f'{html.escape(row["label"])}</td>'
+        f"<td>{html.escape(row['meaning'])}</td>"
+        f"</tr>"
+        for row in rows
+    )
+    return f'<table class="cm-key-table">{body}</table>'
+
+
+def _channel(value):
+    value = value / 255
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def relative_luminance(colour):
+    """WCAG relative luminance of a #rrggbb colour."""
+    digits = colour.lstrip("#")
+    red, green, blue = (int(digits[at:at + 2], 16) for at in (0, 2, 4))
+    return (
+        0.2126 * _channel(red)
+        + 0.7152 * _channel(green)
+        + 0.0722 * _channel(blue)
+    )
+
+
+def contrast_ratio(one, other):
+    """WCAG contrast between two colours, 1 (same) to 21 (black on white).
+
+    Here so the test suite can hold the theme to a number rather than to
+    somebody's eye: AA wants 4.5 for ordinary text and 3 for a border or
+    a large label.
+    """
+    first, second = relative_luminance(one), relative_luminance(other)
+    lighter, darker = max(first, second), min(first, second)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+AA_TEXT = 4.5
+AA_LARGE = 3.0
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,56 @@
+# The dashboard's theme (spec Section 8, decided 11/19).
+#
+# COMMITTED ON PURPOSE. Streamlit reads this file from the repository, so
+# the hosted app on Community Cloud gets the same theme as a local run.
+# A theme set in the host's settings dialog instead would live in one
+# place and be invisible in another.
+#
+# WHY GRAY AND NOT A BRAND COLOUR. The page already spends three colours
+# on meaning - green is better, red is worse, blue is no change (11/16) -
+# and a fourth saturated colour on every button and slider would compete
+# with them. A gunmetal accent recedes, which is what a control should
+# do: the figures are the thing worth looking at.
+#
+# EVERY COLOUR HERE IS MEASURED, NOT EYEBALLED. tests/test_views.py reads
+# this file and holds each pair to WCAG AA (4.5:1 for text, 3:1 for a
+# control's edge), using views.contrast_ratio:
+#
+#   charcoal text on the page background      13.78 : 1
+#   charcoal text on the sidebar background   12.25 : 1
+#   white label on a gunmetal button           7.61 : 1
+#   gunmetal edge on the page background       6.93 : 1
+#   violet / orange / gray kind labels         7.87, 6.18, 6.84 : 1
+#
+# The three kind colours below are the same hexes views.KIND_COLOURS
+# holds, and a test fails if the two ever disagree. They are set here as
+# well as there because the sidebar writes a kind as markdown
+# (":violet[Choice]"), which takes a colour NAME, and the name resolves
+# to whatever this file says it is.
+
+[theme]
+base = "light"
+
+# Gunmetal gray: sliders, buttons, toggles, focus outlines.
+primaryColor = "#4a5560"
+
+# A soft light gray page rather than white - white is the only background
+# a figure can sit on and still look like a spreadsheet.
+backgroundColor = "#f4f4f6"
+
+# Widget surfaces and the sidebar: one step darker, so the controls read
+# as a panel beside the page rather than as part of it.
+secondaryBackgroundColor = "#e6e7eb"
+
+# Dark charcoal rather than black: the same legibility, less glare.
+textColor = "#24262b"
+
+# The scenario kinds (11/19). Red, green and blue are spoken for.
+violetColor = "#5b3a8c"
+orangeColor = "#8a4b0a"
+grayColor = "#4f555e"
+
+[theme.sidebar]
+backgroundColor = "#e6e7eb"
+violetColor = "#5b3a8c"
+orangeColor = "#8a4b0a"
+grayColor = "#4f555e"

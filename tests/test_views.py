@@ -1250,3 +1250,321 @@ def test_every_card_filter_and_control_has_help_text(results):
                 if not getattr(element, "help", ""):
                     missing.append((view, "download_button", element.label))
     assert not missing, f"no help text: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# The theme, the regions and the kinds (final pass, 11/19)
+# ---------------------------------------------------------------------------
+
+THEME_FILE = Path(__file__).resolve().parents[1] / ".streamlit" / "config.toml"
+
+# What Siri asked for, in hex, so a colour cannot drift without this
+# saying so. The file is the thing the hosted app reads, and these are
+# the values it has to hold.
+THEME = {
+    "primaryColor": "#4a5560",            # gunmetal gray
+    "backgroundColor": "#f4f4f6",         # soft light gray page
+    "secondaryBackgroundColor": "#e6e7eb",  # one step darker: sidebar
+    "textColor": "#24262b",               # dark charcoal
+}
+
+
+def theme():
+    import tomllib
+
+    with open(THEME_FILE, "rb") as handle:
+        return tomllib.load(handle)["theme"]
+
+
+def test_the_theme_is_committed_with_the_app(results):
+    """Committed on purpose: Streamlit reads this file out of the
+    repository, so the hosted app is themed by the same file a local run
+    is. A theme set in the host's settings dialog instead would be
+    invisible here.
+    """
+    assert THEME_FILE.exists(), "the hosted app would fall back to white"
+    settings = theme()
+    for option, colour in THEME.items():
+        assert settings[option] == colour, option
+    assert settings["base"] == "light"
+    # The sidebar is the darker gray, which is what makes it read as a
+    # panel beside the page rather than part of it.
+    assert settings["sidebar"]["backgroundColor"] == (
+        THEME["secondaryBackgroundColor"]
+    )
+
+
+def test_every_option_in_the_theme_file_is_one_streamlit_accepts():
+    """A typo in this file is silent: Streamlit ignores what it does not
+    know, the app deploys, and the theme is simply absent.
+    """
+    from streamlit import config
+
+    config.get_config_options()
+    unknown = []
+
+    def walk(prefix, mapping):
+        for name, value in mapping.items():
+            full = f"{prefix}.{name}"
+            if isinstance(value, dict):
+                walk(full, value)
+            elif full not in config._config_options:
+                unknown.append(full)
+
+    walk("theme", theme())
+    assert not unknown, f"Streamlit does not know: {unknown}"
+
+
+def test_the_theme_passes_wcag_aa(results):
+    """Measured, not eyeballed. AA is 4.5:1 for ordinary text and 3:1 for
+    a control's own edge.
+    """
+    page = THEME["backgroundColor"]
+    sidebar = THEME["secondaryBackgroundColor"]
+    text = THEME["textColor"]
+    primary = THEME["primaryColor"]
+
+    assert views.contrast_ratio(text, page) >= views.AA_TEXT
+    assert views.contrast_ratio(text, sidebar) >= views.AA_TEXT
+    # A primary-coloured button is drawn with a white label on it.
+    assert views.contrast_ratio("#ffffff", primary) >= views.AA_TEXT
+    # And its own edge against the page, which is a graphic, not text.
+    assert views.contrast_ratio(primary, page) >= views.AA_LARGE
+
+    # Charcoal on each region tint: the tints are pale for this reason.
+    for tint in views.REGION_TINTS.values():
+        assert views.contrast_ratio(text, tint) >= views.AA_TEXT, tint
+
+    # Every kind label, on both backgrounds it is written on.
+    for kind, colour in views.KIND_COLOURS.items():
+        assert views.contrast_ratio(colour, page) >= views.AA_TEXT, kind
+        assert views.contrast_ratio(colour, sidebar) >= views.AA_TEXT, kind
+
+
+def test_the_contrast_arithmetic_is_right():
+    """The yardstick the test above leans on, against known values."""
+    assert views.contrast_ratio("#000000", "#ffffff") == pytest.approx(21.0)
+    assert views.contrast_ratio("#ffffff", "#ffffff") == pytest.approx(1.0)
+    # The textbook pair: #767676 is the lightest gray that passes AA on
+    # white, at 4.54:1.
+    assert views.contrast_ratio("#767676", "#ffffff") == pytest.approx(
+        4.54, abs=0.01
+    )
+
+
+def test_no_colour_on_the_page_means_two_things(results):
+    """Red, green and blue are spoken for by the cards (11/16), so no
+    kind and no region may wear one of them - a tinted row or a kind
+    label in red would read as a verdict.
+    """
+    cards = {views.BETTER_COLOUR, views.WORSE_COLOUR, views.SAME_COLOUR}
+    kinds = set(views.KIND_COLOURS.values())
+    regions = set(views.REGION_TINTS.values())
+
+    assert not kinds & cards
+    assert not regions & cards
+    assert not kinds & regions
+    assert len(kinds) == len(views.KIND_COLOURS)
+    assert len(regions) == len(views.REGION_TINTS)
+    # The kinds are written in Streamlit's own palette, and the three
+    # names it offers outside red, green and blue are these.
+    assert set(views.KIND_MARKDOWN.values()) <= {"violet", "orange", "gray"}
+
+
+def test_a_card_never_leans_on_colour_alone(results):
+    """Whatever the contrast of the three card colours, the card also
+    says which way it moved in words or with an arrow - so a reader who
+    cannot separate the colours loses nothing.
+    """
+    for key in results["scenarios"]:
+        for card in views.headline_cards(results, key):
+            if card["difference"] is None:
+                continue
+            if card["no_change"]:
+                assert card["difference_text"] == views.NO_CHANGE
+            else:
+                assert card["difference_text"][0] in "+-"
+                assert views.card_arrow(card) in (views.UP_ARROW, views.DOWN_ARROW)
+
+
+def test_the_theme_file_and_the_kind_colours_agree():
+    """Two copies of a hex is one copy too many, and here they cannot
+    disagree: the sidebar writes a kind as markdown (":violet[Choice]"),
+    which resolves the NAME against this file, while the comparison
+    table paints the cell with the hex from views.
+    """
+    settings = theme()
+    for kind, colour in views.KIND_COLOURS.items():
+        name = views.KIND_MARKDOWN[kind]
+        assert settings[f"{name}Color"] == colour, kind
+        assert settings["sidebar"][f"{name}Color"] == colour, kind
+
+
+def test_every_kind_has_a_colour_a_label_and_one_line_of_meaning():
+    for kind in scenarios.KINDS:
+        assert views.kind_colour(kind), kind
+        assert views.kind_markdown(kind) == (
+            f":{views.KIND_MARKDOWN[kind]}[{views.kind_label(kind)}]"
+        )
+        meaning = views.KIND_MEANINGS[kind]
+        assert meaning.endswith("."), kind
+        assert meaning[0].isupper(), kind
+
+    rows = views.kind_key_rows()
+    assert [row["kind"] for row in rows] == list(scenarios.KINDS)
+    assert all(row["colour"] and row["meaning"] for row in rows)
+    # A kind nobody declared gets no colour rather than a wrong one.
+    assert views.kind_colour("proposal") is None
+    assert views.kind_markdown("proposal") == "proposal"
+
+
+def test_every_run_s_kind_is_a_kind_with_a_colour(results):
+    """Checked against the saved runs, not against a list here: a run
+    added with a new kind has to be given a colour before it can be
+    shown.
+    """
+    for key, run in results["scenarios"].items():
+        assert views.kind_colour(run["kind"]), f"{key}: {run['kind']}"
+
+
+# ---------------------------------------------------------------------------
+# Rows tinted by region
+# ---------------------------------------------------------------------------
+
+
+def test_every_scope_in_every_run_has_a_region_and_a_tint(results, dimensions):
+    """Walked over every saved run's plan, so a scope the model produces
+    and this does not know about shows up here rather than as an
+    untinted row on the page.
+    """
+    for key, run in results["scenarios"].items():
+        for scope in set(run["plan"]["scope"]):
+            region = views.region_of(scope, dimensions)
+            assert region is not None, f"{key}: no region for {scope!r}"
+            assert views.REGION_TINTS.get(region), f"{scope}: no tint"
+
+
+def test_the_region_is_read_from_the_clusters_not_from_the_code(dimensions):
+    """A site belongs to the cluster sites.yaml puts it in, not to the
+    letter its code starts with, so a site added later lands in its real
+    cluster.
+    """
+    for cluster in dimensions["clusters"]:
+        for site in cluster["sites"]:
+            assert views.region_of(site, dimensions) == cluster["code"]
+    assert views.region_of(dimensions["network_code"], dimensions) == (
+        views.NETWORK_REGION
+    )
+    assert views.region_of("Z9", dimensions) is None
+
+
+def test_the_back_office_is_its_own_region(dimensions):
+    """Not a site and not a cluster (spec 6.7). The key says which roles
+    it covers, read from the roles themselves.
+    """
+    rows = views.region_key_rows(dimensions)
+    assert len(rows) == len(dimensions["clusters"]) + 1
+    network = rows[-1]
+    assert network["region"] == views.NETWORK_REGION
+    assert dimensions["network_code"] in network["label"]
+    for role in views.network_roles(dimensions):
+        assert role["short_name"] in network["meaning"]
+
+
+def test_the_plan_styler_tints_each_row_by_its_region(results, dimensions):
+    """Row by row, against the scope in that row."""
+    plan = results["scenarios"]["baseline"]["plan"]
+    view = views.plan_view(plan)
+    tints = views.row_tints(view, dimensions)
+    assert len(tints) == len(view)
+    for scope, tint in zip(view[views.SCOPE_HEADER], tints):
+        expected = views.REGION_TINTS[views.region_of(scope, dimensions)]
+        assert tint == expected, scope
+    # All three tints really are in use on a network-wide view.
+    assert set(tints) == set(views.REGION_TINTS.values())
+
+    styler = views.plan_styler(view, dimensions)
+    rendered = styler.to_html()
+    for tint in views.REGION_TINTS.values():
+        assert f"background-color: {tint}" in rendered
+
+
+def test_the_tints_leave_the_figures_and_the_download_alone(
+    results, dimensions
+):
+    """A tint is a thing done to a screen. The rounded figures on screen
+    and the full-precision bytes in the CSV are the same as before it.
+    """
+    view = views.plan_view(results["scenarios"]["volume_plus_15"]["plan"])
+    plain = views.plan_display(view)
+    styled = views.plan_styler(view, dimensions)
+
+    assert styled.data.equals(plain)
+    assert views.csv_bytes(view) == views.csv_bytes(view)
+    text = views.csv_bytes(view).decode("utf-8")
+    assert "background-color" not in text
+    for tint in views.REGION_TINTS.values():
+        assert tint not in text
+
+
+# ---------------------------------------------------------------------------
+# Both keys, on the page
+# ---------------------------------------------------------------------------
+
+
+def test_the_region_key_sits_beside_the_download(results, dimensions):
+    app = app_test().run()
+    assert not app.exception
+    blocks = [str(block.value) for block in app.markdown]
+    key = [block for block in blocks if "cm-key-item" in block]
+    assert key, "no region key reached the page"
+    for row in views.region_key_rows(dimensions):
+        assert any(row["colour"] in block for block in key), row["label"]
+        assert any(row["label"] in block for block in key), row["label"]
+
+
+def test_the_kind_key_table_replaced_the_paragraph(results):
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    assert not app.exception
+
+    blocks = [str(block.value) for block in app.markdown]
+    table = [block for block in blocks if "cm-key-table" in block and "<tr>" in block]
+    assert table, "no kind key table reached the page"
+    for row in views.kind_key_rows():
+        assert row["colour"] in table[0], row["label"]
+        assert row["label"] in table[0], row["label"]
+        assert row["meaning"] in table[0], row["label"]
+
+    # The paragraph it replaced is gone, rather than both being shown.
+    captions = [str(caption.value) for caption in app.caption]
+    assert not any("A CHOICE is" in caption for caption in captions)
+
+
+def test_the_kind_beside_a_run_in_the_picker_is_coloured(results):
+    """In the picker, a kind is markdown, so the colour arrives as the
+    name Streamlit resolves against the theme file.
+    """
+    app = app_test().run()
+    captions = run_picker(app).captions
+    assert captions
+    for kind, name in views.KIND_MARKDOWN.items():
+        wanted = f":{name}[{views.kind_label(kind)}]"
+        assert any(wanted in caption for caption in captions), kind
+
+
+def test_the_detail_table_keeps_its_formats_under_the_tints(results):
+    """Streamlit's rule: "Text and number formatting from column_config
+    always takes precedence over text and number formatting from
+    pandas.Styler". Checked on the real page, because that rule is the
+    whole reason the tints are safe to add.
+    """
+    app = app_test().run()
+    assert not app.exception
+    proto = app.dataframe[0].proto
+    assert proto.arrow_data.styler.styles, "no tints in the dataframe proto"
+    for tint in views.REGION_TINTS.values():
+        assert tint in proto.arrow_data.styler.styles, tint
+    # And the column settings are still there, money format and all.
+    assert "$%,.0f" in proto.columns
+    assert "%,.1f" in proto.columns

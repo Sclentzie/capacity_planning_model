@@ -148,7 +148,11 @@ def caption_for(entry):
     The kind is the run's own declared field, so a risk cannot be read as
     a proposal just because it sits in a list of them.
     """
-    parts = [entry["kind_label"]]
+    # The kind in its own colour (11/19). A caption takes markdown and
+    # not HTML, so the colour comes from the name Streamlit resolves
+    # against .streamlit/config.toml - the same hex the comparison table
+    # and the key below it use.
+    parts = [views.kind_markdown(entry["kind"])]
     if entry["key"] == views.BASELINE_KEY:
         parts = [views.BASELINE_GROUP]
     elif entry["group"] == views.HEADLINE_GROUP:
@@ -326,6 +330,7 @@ def show_detail(results, key, choice, roles, changes=None):
     download is the one 7b settled on.
     """
     st.markdown("#### The rows behind the figures")
+    dimensions = filter_dimensions()
     plan = views.filter_plan(
         results["scenarios"][key]["plan"], roles, choice["scopes"]
     )
@@ -340,7 +345,12 @@ def show_detail(results, key, choice, roles, changes=None):
         "the workbook calls that column and what it means."
     )
     st.dataframe(
-        views.plan_display(view),
+        # Tinted by region (11/19): the North sites, the South sites and
+        # the back office interleave once the rows are sorted by week,
+        # and a tint saves reading the Scope column on every line.
+        # column_config still decides every number's format - Streamlit's
+        # own rule - so the tints cannot undo 7d.
+        views.plan_styler(view, dimensions),
         hide_index=True,
         width="stretch",
         column_config=plan_column_config(),
@@ -366,7 +376,15 @@ def show_detail(results, key, choice, roles, changes=None):
             "unreadable a week later. The lines start with # so a reader "
             "and pandas both skip them."
         )
-    st.download_button(
+    # The key sits beside the download button, where a reader who has
+    # just noticed the tints is already looking.
+    download, legend = st.columns([2, 3], vertical_alignment="center")
+    st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
+    legend.markdown(
+        views.region_key_html(views.region_key_rows(dimensions)),
+        unsafe_allow_html=True,
+    )
+    download.download_button(
         "Download these rows (CSV, synthetic)",
         data=data,
         file_name=name,
@@ -396,7 +414,10 @@ def show_comparison(results):
     )
     table = views.comparison_table(results)
     st.dataframe(
-        views.comparison_display(table),
+        # Each run's kind in its kind's colour (11/19), through a Styler;
+        # the formats still come from column_config, which Streamlit
+        # gives precedence.
+        views.comparison_styler(table),
         hide_index=True,
         width="stretch",
         # The same formats and the same per-measure notes the cards use
@@ -404,14 +425,16 @@ def show_comparison(results):
         # and "7456636" here, which is one figure in two notations.
         column_config=comparison_column_config(table),
     )
+    # A key table rather than a paragraph (11/19). The paragraph said the
+    # same three things and nobody read it, because a reader scanning a
+    # ranked list wants to know what the word beside a run means, not to
+    # be taught a taxonomy.
+    st.markdown("**Kind is declared by the run, not worked out here**")
+    st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
+    st.markdown(views.kind_key_html(views.kind_key_rows()), unsafe_allow_html=True)
     st.caption(
-        "KIND IS DECLARED BY THE RUN, not worked out here. A CHOICE is "
-        "something the operation could decide to do; a RISK is something "
-        "that could happen to it, which nobody is proposing; a SENSITIVITY "
-        "varies one input of another run to test whether its finding holds "
-        "and is not a proposal of its own. The ranking puts all three next "
-        "to each other, and the cheapest row is not always something anyone "
-        "is offering to do."
+        "The ranking puts all three next to each other, and the cheapest "
+        "row is not always something anyone is offering to do."
     )
 
 

@@ -190,13 +190,29 @@ hover on the card and on the comparison table's column header. Every filter,
 control and button on the page carries help text too, which a test checks by
 walking the real page rather than by listing them.
 
+**The theme, and the colours that mean something.** `.streamlit/config.toml` is
+committed, so the hosted app is themed by the same file a local run is: a
+gunmetal accent (`#4a5560`) on the sliders, buttons and focus outlines, a soft
+light gray page (`#f4f4f6`), a step darker for the sidebar (`#e6e7eb`), and dark
+charcoal text (`#24262b`). Red, green and blue are reserved for the cards, so
+nothing else on the page uses them: the detail table's rows are tinted by region
+— warm sand for the North cluster, pale lilac for the South, pale gray for the
+back office, with a key beside the download button — and the scenario kinds are
+violet, orange and gray. Every pair is held to WCAG AA by a test that computes
+the contrast ratio rather than trusting an eye: charcoal on the page is 13.8:1,
+a white label on a gunmetal button is 7.6:1, and the palest tint still carries
+charcoal text at 12.1:1. The tints are a thing done to the screen; the CSV is
+the same bytes it always was.
+
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
 happen to it that nobody is proposing, and a **sensitivity** varies one input of
 another run to test whether its finding holds. The dashboard shows it beside
 every run and the workbook names sensitivity runs in italics, both reading the
 same declared field — a sensitivity read as a proposal is how a finding gets
-quoted as something it never said.
+quoted as something it never said. Each kind is written in its own colour —
+**violet** for a choice, **orange** for a risk, **gray** for a sensitivity —
+beside every run and in a small key table on the comparison view.
 
 Each headline card is read one way: **green** moved the way a planner wants,
 **red** moved the other way, **blue** did not move at all. All six measures are
@@ -242,7 +258,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 803 tests, about 85 minutes
+# The validation checks: 821 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -282,7 +298,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-803 tests across 24 files, all passing. Every validation check in the
+821 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference
