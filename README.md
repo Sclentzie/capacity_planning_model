@@ -190,22 +190,45 @@ hover on the card and on the comparison table's column header. Every filter,
 control and button on the page carries help text too, which a test checks by
 walking the real page rather than by listing them.
 
-**The theme, and the colours that mean something.** `.streamlit/config.toml` is
-committed, so the hosted app is themed by the same file a local run is: a
-gunmetal accent (`#4a5560`) on the sliders, buttons and focus outlines, a soft
-light gray page (`#f4f4f6`), a step darker for the sidebar (`#e6e7eb`), and dark
-charcoal text (`#24262b`). Red, green and blue are reserved for the cards, so
-nothing else on the page uses them: the detail table's rows are tinted by region
-— warm sand for the North cluster, pale lilac for the South, pale gray for the
-back office, with a key beside the download button — and the scenario kinds are
-violet, orange and gray. Every pair is held to WCAG AA by a test that computes
-the contrast ratio rather than trusting an eye: charcoal on the page is 13.8:1,
-a white label on a gunmetal button is 7.6:1, and the palest tint still carries
-charcoal text at 12.1:1. That measurement moved two of the card colours too:
-Streamlit's own green and red reached only 2.8:1 and 3.4:1 as small text, so the
-cards now use a darker green (`#077d2a`, 4.8:1) and a darker red (`#c62828`,
-5.1:1); the blue (`#0068c9`, 5.0:1) already passed. The tints are a thing done
-to the screen; the CSV is the same bytes it always was.
+**Two themes, and the colours that mean something.**
+`.streamlit/config.toml` is committed, so the hosted app is themed by the same
+file a local run is, and it carries two full palettes as `[theme.light]` and
+`[theme.dark]`. Light is a warm cream page (`#faf7f2`, never pure white — white
+is the one background that makes a table of figures look like a spreadsheet), a
+step darker for the sidebar (`#f1ebe0`), dark charcoal text (`#24262b`) and a
+teal accent (`#3a7a8c`) on the sliders, buttons and focus outlines. Dark is a
+deep charcoal page (`#191b1e`, never pure black), a step *lighter* for the
+sidebar (`#232629`), warm off-white text (`#edeae4`) and the same teal made more
+vivid (`#107e9c`). A viewer switches in the menu at the top right of the page,
+where Streamlit draws a System / Light / Dark control — and draws it *only*
+because both palettes exist; ship one custom theme and the control is hidden.
+System is the default, so a reader on a dark-mode machine lands in dark mode
+unasked. There is no on-page toggle because Streamlit 1.67 has no API for
+setting the theme from page code (`st.context.theme` is read-only), so the
+sidebar points at the real control instead of faking one.
+
+Every colour this model invented therefore comes in a pair, and the shade is
+chosen at render time from the palette the reader is actually in: a dark green
+that reads well on cream is 1.4:1 on charcoal, which is no colour at all.
+Red, green and blue are reserved for the cards — better, worse, no change — so
+nothing else on the page uses them. The detail table tints the **Scope cell**
+(not the whole row: seventeen tinted columns is a lot of colour for one fact,
+and it reads as a verdict on the row rather than a label on its scope) in warm
+sand for the North cluster, lilac for the South and neutral gray for the back
+office, with a key beside the download button. The scenario kinds stay violet,
+orange and gray.
+
+Nothing here was eyeballed. Tests recompute every contrast ratio in both
+palettes and hold each to WCAG AA — charcoal on cream is 14.2:1, off-white on
+charcoal 14.4:1, a white label on either teal button 4.8:1 and 4.7:1 — and they
+also hold the colours *apart*, by CIE delta-E, so that no two things which mean
+different things can look the same. That second measure is what settled Siri's
+question about the no-change blue against the teal accent: the old `#0068c9` sat
+too close to the teal in dark mode, so the blue moved to `#2048cc` (light) and
+`#5c90fc` (dark), now 76.5 and 49.7 apart from their accents. The card colours
+moved for contrast in the same pass: green is `#0f7034` / `#5fd98a` and red
+`#bc2626` / `#ff9a94`. The tints are a thing done to the screen; the CSV is the
+same bytes it always was.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -261,7 +284,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 822 tests, about 85 minutes
+# The validation checks: 837 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -301,7 +324,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-822 tests across 24 files, all passing. Every validation check in the
+837 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 - **Hand calculations, against workbooks built by hand first.** The reference

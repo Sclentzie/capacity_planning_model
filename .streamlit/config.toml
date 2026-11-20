@@ -1,56 +1,128 @@
-# The dashboard's theme (spec Section 8, decided 11/19).
+# The dashboard's theme, in two palettes (spec Section 8, decided 11/19).
 #
 # COMMITTED ON PURPOSE. Streamlit reads this file from the repository, so
 # the hosted app on Community Cloud gets the same theme as a local run.
 # A theme set in the host's settings dialog instead would live in one
 # place and be invisible in another.
 #
-# WHY GRAY AND NOT A BRAND COLOUR. The page already spends three colours
-# on meaning - green is better, red is worse, blue is no change (11/16) -
-# and a fourth saturated colour on every button and slider would compete
-# with them. A gunmetal accent recedes, which is what a control should
-# do: the figures are the thing worth looking at.
+# WHY TWO PALETTES. The page is read on other people's screens. A reader
+# whose machine is set to dark mode gets a white page thrown at them
+# unless the app brings a dark palette of its own. Streamlit 1.67 takes
+# two, as [theme.light] and [theme.dark], and - this is the part worth
+# knowing - it only shows its System / Light / Dark switch at all once
+# BOTH exist. One custom theme and the switch is hidden.
+#
+# HOW A VIEWER SWITCHES. The menu at the top right of the page: the three
+# choices sit at the top of that menu, not inside Settings. "System"
+# follows the reader's own operating system and browser, and is the
+# default, so a dark-mode machine lands on the dark palette unasked.
+#
+# WHY THERE IS NO [theme] SECTION AND NO `base`.
+#   - A colour in a bare [theme] section applies to BOTH palettes:
+#     Streamlit merges the shared section first and then the variant on
+#     top of it. A cream page left up there would leak into dark mode
+#     until the dark section happened to override it. Everything that
+#     differs between the two lives in its own section, so nothing can.
+#   - `base` is the theme a custom theme inherits from, and it is only
+#     legal in the shared section. It would be dead weight here anyway:
+#     Streamlit forces base to light when it builds the light variant and
+#     to dark when it builds the dark one, whatever this file says. So
+#     each palette inherits Streamlit's matching defaults for every
+#     option below that we do not set, which is what we want.
 #
 # EVERY COLOUR HERE IS MEASURED, NOT EYEBALLED. tests/test_views.py reads
-# this file and holds each pair to WCAG AA (4.5:1 for text, 3:1 for a
-# control's edge), using views.contrast_ratio:
+# this file, checks it against views.THEME_COLOURS, and holds every pair
+# in both palettes to WCAG AA (4.5:1 for text, 3:1 for a control's own
+# edge) using views.contrast_ratio. It also holds the colours APART, with
+# views.colour_distance, so that no two things that mean different things
+# look the same - the no-change blue against the teal accent above all.
 #
-#   charcoal text on the page background      13.78 : 1
-#   charcoal text on the sidebar background   12.25 : 1
-#   white label on a gunmetal button           7.61 : 1
-#   gunmetal edge on the page background       6.93 : 1
-#   violet / orange / gray kind labels         7.87, 6.18, 6.84 : 1
+#                                        light        dark
+#   body text on the page                14.17 : 1    14.37 : 1
+#   body text on the sidebar             12.76 : 1    12.67 : 1
+#   white label on the teal button        4.84 : 1     4.68 : 1
+#   teal edge on the page                 4.53 : 1     3.69 : 1
+#   violet / orange / gray kind labels    8.09, 6.36, 6.35
+#                                                      6.81, 8.39, 8.44
 #
-# The three kind colours below are the same hexes views.KIND_COLOURS
-# holds, and a test fails if the two ever disagree. They are set here as
-# well as there because the sidebar writes a kind as markdown
-# (":violet[Choice]"), which takes a colour NAME, and the name resolves
-# to whatever this file says it is.
+# The three kind colours in each section are the same hexes
+# views.KIND_COLOURS holds, and a test fails if the two ever disagree.
+# They are set here as well as there because the sidebar writes a kind as
+# markdown (":violet[Choice]"), which takes a colour NAME, and the name
+# resolves to whatever this file says it is - per palette, which is the
+# whole reason a kind can be readable in both.
 
-[theme]
-base = "light"
 
-# Gunmetal gray: sliders, buttons, toggles, focus outlines.
-primaryColor = "#4a5560"
+# ---------------------------------------------------------------------------
+# Light: a warm cream document, never a white spreadsheet
+# ---------------------------------------------------------------------------
+[theme.light]
 
-# A soft light gray page rather than white - white is the only background
-# a figure can sit on and still look like a spreadsheet.
-backgroundColor = "#f4f4f6"
+# Teal: sliders, buttons, toggles, focus outlines. An accent has to be a
+# colour that means nothing, because this page already spends six on
+# meaning - better, worse, no change, and the three scenario kinds.
+primaryColor = "#3a7a8c"
 
-# Widget surfaces and the sidebar: one step darker, so the controls read
-# as a panel beside the page rather than as part of it.
-secondaryBackgroundColor = "#e6e7eb"
+# Warm cream rather than white. White is the one background that makes a
+# table of figures look like a spreadsheet; cream reads as a document.
+backgroundColor = "#faf7f2"
+
+# Widget surfaces and the sidebar: a step darker in the same cream, so
+# the controls read as a panel beside the page rather than as part of it.
+secondaryBackgroundColor = "#f1ebe0"
 
 # Dark charcoal rather than black: the same legibility, less glare.
 textColor = "#24262b"
 
-# The scenario kinds (11/19). Red, green and blue are spoken for.
+# The scenario kinds. Red, green and blue are spoken for by the cards.
 violetColor = "#5b3a8c"
 orangeColor = "#8a4b0a"
-grayColor = "#4f555e"
+grayColor = "#5c5b58"   # a WARM gray, which also pulls it clear of the teal
 
-[theme.sidebar]
-backgroundColor = "#e6e7eb"
+[theme.light.sidebar]
+backgroundColor = "#f1ebe0"
 violetColor = "#5b3a8c"
 orangeColor = "#8a4b0a"
-grayColor = "#4f555e"
+grayColor = "#5c5b58"
+
+
+# ---------------------------------------------------------------------------
+# Dark: a deep charcoal, never a pure black
+# ---------------------------------------------------------------------------
+[theme.dark]
+
+# The same teal, more vivid rather than lighter. "Lighter" ran into a
+# wall worth recording: the Run button is a primary button, so the teal
+# carries a white label, and a teal light enough to look lighter cannot
+# hold that label at AA - a white label needs the teal's luminance under
+# about 0.18, and that caps how light it can get. Streamlit's own dark
+# default accent has the same shape (#cf4250, barely lighter than its
+# light one, white label at 4.62:1). So the dark accent buys its
+# brightness in saturation instead: same luminance band, far more
+# colour, white label at 4.68:1 - a shade better than Streamlit's own.
+primaryColor = "#107e9c"
+
+# Deep charcoal rather than black. Black plus off-white is glare, and the
+# scope tints need somewhere to sit above the page without going pale.
+backgroundColor = "#191b1e"
+
+# A step LIGHTER here, where the light palette went a step darker: on a
+# dark page a panel separates itself by coming forward, not by receding.
+secondaryBackgroundColor = "#232629"
+
+# Warm off-white rather than white, to match the cream palette's family
+# and for the same reason the light text is charcoal and not black.
+textColor = "#edeae4"
+
+# The same three kinds, re-chosen for a dark page: each light shade is
+# far too dark here (the light violet is 1.7:1 on this background, which
+# is no colour at all), so each one is a pastel of the same hue.
+violetColor = "#be8fe8"
+orangeColor = "#e8a862"
+grayColor = "#afb6bf"
+
+[theme.dark.sidebar]
+backgroundColor = "#232629"
+violetColor = "#be8fe8"
+orangeColor = "#e8a862"
+grayColor = "#afb6bf"

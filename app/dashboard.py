@@ -93,6 +93,32 @@ def filter_dimensions():
     return api.dimensions()
 
 
+def active_mode():
+    """Which palette the viewer is looking at: "light" or "dark" (11/19).
+
+    This is the ONLY place the app asks, and it is asked on every rerun
+    rather than cached, because the answer changes when the reader
+    changes it. Everything custom-coloured takes the answer as an
+    argument, so a card, a scope tint and a kind label cannot end up
+    drawn in different palettes from each other.
+
+    Streamlit infers the mode from the background colour it ended up
+    with, and its own docs warn the answer "may be incorrect during a
+    change in theme", naming two cases: the first load of a session, and
+    the moment a reader switches. Both settle on the next rerun, and
+    views.resolve_mode turns an absent or unrecognised answer into light
+    rather than raising - so the worst case is one frame of light-palette
+    colours on a dark page, not a stack trace. The attribute is read
+    defensively for the same reason: an older or newer Streamlit that
+    does not offer it should cost a default, not the page.
+    """
+    try:
+        reported = st.context.theme.type
+    except Exception:  # noqa: BLE001 - a theme is never worth a blank page
+        reported = None
+    return views.resolve_mode(reported)
+
+
 @st.cache_data
 def current_inputs():
     """A fingerprint of the input files as they are on disk right now."""
@@ -241,6 +267,7 @@ def show_cards(results, key):
         "exact difference behind the rounding."
     )
     cards = views.headline_cards(results, key)
+    mode = active_mode()
     st.markdown(views.CARD_STYLE, unsafe_allow_html=True)
     for start in range(0, len(cards), CARDS_PER_ROW):
         row = cards[start:start + CARDS_PER_ROW]
@@ -249,7 +276,9 @@ def show_cards(results, key):
             # and no way to say "this did not move" - the third thing a
             # card has to be able to say. Hover a card for the exact
             # difference, which the card itself rounds.
-            column.markdown(views.card_html(card), unsafe_allow_html=True)
+            column.markdown(
+                views.card_html(card, mode), unsafe_allow_html=True
+            )
 
 
 def show_charts(results, key, choice, roles):
@@ -331,6 +360,7 @@ def show_detail(results, key, choice, roles, changes=None):
     """
     st.markdown("#### The rows behind the figures")
     dimensions = filter_dimensions()
+    mode = active_mode()
     plan = views.filter_plan(
         results["scenarios"][key]["plan"], roles, choice["scopes"]
     )
@@ -345,12 +375,15 @@ def show_detail(results, key, choice, roles, changes=None):
         "the workbook calls that column and what it means."
     )
     st.dataframe(
-        # Tinted by region (11/19): the North sites, the South sites and
-        # the back office interleave once the rows are sorted by week,
-        # and a tint saves reading the Scope column on every line.
-        # column_config still decides every number's format - Streamlit's
-        # own rule - so the tints cannot undo 7d.
-        views.plan_styler(view, dimensions),
+        # The SCOPE CELL tinted by region (11/19): the North sites, the
+        # South sites and the back office interleave once the rows are
+        # sorted by week, and a tint saves reading the Scope column on
+        # every line. One cell rather than the whole row, so the colour
+        # labels the scope instead of judging the row, and the figures
+        # keep the page's own background. column_config still decides
+        # every number's format - Streamlit's own rule - so the tints
+        # cannot undo 7d.
+        views.plan_styler(view, dimensions, mode=mode),
         hide_index=True,
         width="stretch",
         column_config=plan_column_config(),
@@ -381,7 +414,7 @@ def show_detail(results, key, choice, roles, changes=None):
     download, legend = st.columns([2, 3], vertical_alignment="center")
     st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
     legend.markdown(
-        views.region_key_html(views.region_key_rows(dimensions)),
+        views.region_key_html(views.region_key_rows(dimensions, mode)),
         unsafe_allow_html=True,
     )
     download.download_button(
@@ -413,11 +446,12 @@ def show_comparison(results):
         "measure is - the same sentence the cards in the other view give."
     )
     table = views.comparison_table(results)
+    mode = active_mode()
     st.dataframe(
         # Each run's kind in its kind's colour (11/19), through a Styler;
         # the formats still come from column_config, which Streamlit
         # gives precedence.
-        views.comparison_styler(table),
+        views.comparison_styler(table, mode),
         hide_index=True,
         width="stretch",
         # The same formats and the same per-measure notes the cards use
@@ -431,7 +465,9 @@ def show_comparison(results):
     # be taught a taxonomy.
     st.markdown("**Kind is declared by the run, not worked out here**")
     st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
-    st.markdown(views.kind_key_html(views.kind_key_rows()), unsafe_allow_html=True)
+    st.markdown(
+        views.kind_key_html(views.kind_key_rows(mode)), unsafe_allow_html=True
+    )
     st.caption(
         "The ranking puts all three next to each other, and the cheapest "
         "row is not always something anyone is offering to do."
@@ -934,6 +970,18 @@ def main():
     # a screenshot of either one travels on its own.
     synthetic_banner(meta)
     staleness_banner(meta)
+
+    # Where light and dark are changed (11/19). Streamlit 1.67 has no API
+    # for setting the theme from the page - st.context.theme is read-only
+    # - so there is no honest on-page toggle to offer, and a fake one
+    # that only recoloured half the page would be worse than a pointer to
+    # the real control. The switch Streamlit draws is easy to miss, so
+    # the sidebar says where it is. It only exists at all because this
+    # app ships both palettes.
+    st.sidebar.caption(
+        "Light or dark: the menu at the top right of the page. *System* "
+        "follows your own machine, and is the default."
+    )
 
     st.sidebar.subheader("View")
     view = st.sidebar.radio(

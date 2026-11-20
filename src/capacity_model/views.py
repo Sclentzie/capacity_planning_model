@@ -29,6 +29,63 @@ from . import api, export, scenarios
 BASELINE_KEY = "baseline"
 BASELINE_LABEL = "Baseline"
 
+
+# ---------------------------------------------------------------------------
+# Light and dark: every custom colour is a PAIR (7d, 11/19)
+#
+# WHY TWO PALETTES. The page is read on other people's screens, and a
+# reader whose machine is set to dark mode gets a white page thrown at
+# them unless the app has a dark palette of its own. Streamlit 1.67 takes
+# two, as [theme.light] and [theme.dark] in .streamlit/config.toml, and
+# shows its own Light/Dark/System switch once both exist.
+#
+# WHY THE COLOURS CANNOT JUST BE REUSED. Streamlit swaps its own
+# backgrounds, but the colours THIS model invented - the three card
+# verdicts, the three scope tints, the three scenario kinds - are hexes
+# in this file, and a hex that passes WCAG AA on a cream page fails on a
+# charcoal one. A dark green on dark charcoal is 1.4:1: a reader sees
+# nothing. So each one is a pair, and the shade is picked at render time
+# from the palette the viewer is actually looking at.
+#
+# HOW THE MODE IS KNOWN. The dashboard reads st.context.theme.type and
+# passes it in. This module stays free of Streamlit on purpose (a view
+# layer that imported it could not be tested without starting a server),
+# so nothing here reaches for the mode itself - it is always an argument,
+# and an absent or unrecognised one falls back to light.
+# ---------------------------------------------------------------------------
+
+LIGHT_MODE = "light"
+DARK_MODE = "dark"
+MODES = (LIGHT_MODE, DARK_MODE)
+
+# Light, not dark, when nobody said. Streamlit cannot always tell which
+# mode a viewer is in - its own docs say the type "may be incorrect
+# during a change in theme", including on the first load of a session -
+# so this has to answer something sane for None rather than raise. One
+# rerun later the real answer arrives and the colours follow it.
+DEFAULT_MODE = LIGHT_MODE
+
+
+def resolve_mode(mode=None):
+    """Which palette to draw in: light unless told dark, clearly.
+
+    Anything that is not one of the two known modes - None, "", a
+    Streamlit version that starts calling it something else - is light,
+    because a page that renders in the wrong palette is a bad day and a
+    page that raises is a blank screen.
+    """
+    return mode if mode in MODES else DEFAULT_MODE
+
+
+def shade(pair, mode=None):
+    """One colour out of a light/dark pair.
+
+    Every custom colour in this file is stored as {"light": ..., "dark":
+    ...} and read through here, so there is exactly one place that knows
+    how a pair turns into a hex.
+    """
+    return pair[resolve_mode(mode)]
+
 # Excel number format -> how the same figure is written on the page. The
 # dashboard looks the format up instead of choosing its own precision,
 # because a cost rounded to the dollar on the tab and to the cent on the
@@ -443,18 +500,34 @@ def headline_cards(results, key):
 # used, with a third colour for no change at all.
 # ---------------------------------------------------------------------------
 
-# Green, red and blue - DARKENED FOR CONTRAST (Siri, 11/19). These began
-# as Streamlit's own three, so that a card looked like the rest of the
-# page. Measuring them for the theme pass showed that two of the three
-# never reached WCAG AA as small text: Streamlit's green was 2.8:1 and
-# its red 3.4:1 against the page, and had been 3.0 and 3.7 against the
-# white page before it. Looking like the rest of the page is worth less
-# than being readable, so the green and the red are darker and the blue,
-# which already passed at 5.0:1, is untouched. A test holds all three to
-# AA on the page background.
-BETTER_COLOUR = "#077d2a"   # green: moved the way a planner wants, 4.8:1
-WORSE_COLOUR = "#c62828"    # red:   moved the other way, 5.1:1
-SAME_COLOUR = "#0068c9"     # blue:  did not move at all, 5.0:1
+# Green, red and blue, ONE PAIR EACH (Siri, 11/19). These began as
+# Streamlit's own three, so that a card looked like the rest of the page.
+# Measuring them showed two of the three never reached WCAG AA as small
+# text, so they were darkened; the move to a cream page and a charcoal
+# one re-measured all three again.
+#
+# The dark shades are not the light ones lightened by eye. A card is
+# small text, so each shade has to clear 4.5:1 on the background it is
+# actually drawn on, and the dark page is nearly black: that forces the
+# dark shades up into pastels. The light ones go the other way. The
+# figures each pair carries are the measured ratios against that mode's
+# page background; a test re-measures them rather than trusting these.
+BETTER_COLOURS = {
+    LIGHT_MODE: "#0f7034",   # green: moved the way a planner wants, 5.8:1
+    DARK_MODE: "#5fd98a",    #                                       9.7:1
+}
+WORSE_COLOURS = {
+    LIGHT_MODE: "#bc2626",   # red:   moved the other way,           5.7:1
+    DARK_MODE: "#ff9a94",    #                                       8.5:1
+}
+SAME_COLOURS = {
+    LIGHT_MODE: "#2048cc",   # blue:  did not move at all,           6.9:1
+    DARK_MODE: "#5c90fc",    #                                       5.6:1
+}
+
+# The three together, for the tests that hold every card colour to AA and
+# check that no two of them could be mistaken for each other.
+CARD_COLOURS = (BETTER_COLOURS, WORSE_COLOURS, SAME_COLOURS)
 
 DOWN_ARROW = "▼"
 UP_ARROW = "▲"
@@ -468,22 +541,26 @@ CARD_STYLE = """<style>
 </style>"""
 
 
-def card_colour(card):
+def card_colour(card, mode=None):
     """Green, red or blue - the one rule every card follows.
 
     Blue first, because "did not move" is a different statement from
     "moved a little the wrong way" and the rounding must not turn one
     into the other. Then the direction: all six measures are better
     lower (11/16), so down is green and up is red.
+
+    The MEANING is picked here and the SHADE at the end, from the mode,
+    so light and dark cannot drift apart into two different rules about
+    which way is good.
     """
     if card["difference"] is None:
         return None
     if card["no_change"]:
-        return SAME_COLOUR
+        return shade(SAME_COLOURS, mode)
     better = card["difference"] < 0 if card["direction"] == BETTER_LOWER else (
         card["difference"] > 0
     )
-    return BETTER_COLOUR if better else WORSE_COLOUR
+    return shade(BETTER_COLOURS if better else WORSE_COLOURS, mode)
 
 
 def card_arrow(card):
@@ -549,13 +626,13 @@ def card_tooltip(card):
     return f"{lead} Against the baseline: {exact}."
 
 
-def card_html(card):
+def card_html(card, mode=None):
     """One card, in the layout st.metric drew.
 
     Built as a string here rather than in the page so a test can read a
     card's colour without starting one.
     """
-    colour = card_colour(card)
+    colour = card_colour(card, mode)
     delta = card["difference_text"]
     if delta:
         arrow = card_arrow(card)
@@ -681,9 +758,18 @@ def comparison_display(table):
 # ---------------------------------------------------------------------------
 
 KIND_COLOURS = {
-    scenarios.KIND_CHOICE: "#5b3a8c",       # violet
-    scenarios.KIND_RISK: "#8a4b0a",         # orange
-    scenarios.KIND_SENSITIVITY: "#4f555e",  # gray
+    scenarios.KIND_CHOICE: {
+        LIGHT_MODE: "#5b3a8c",   # violet, 8.1:1 on the cream page
+        DARK_MODE: "#be8fe8",    #         6.8:1 on the charcoal page
+    },
+    scenarios.KIND_RISK: {
+        LIGHT_MODE: "#8a4b0a",   # orange, 6.4:1
+        DARK_MODE: "#e8a862",    #         8.4:1
+    },
+    scenarios.KIND_SENSITIVITY: {
+        LIGHT_MODE: "#5c5b58",   # gray,   6.4:1 - a WARM gray on a cream
+        DARK_MODE: "#afb6bf",    #         8.4:1   page, which also pulls it
+    },                           #                 clear of the teal accent
 }
 
 # The same three as Streamlit markdown colour names, for the places that
@@ -707,9 +793,10 @@ KIND_MEANINGS = {
 }
 
 
-def kind_colour(kind):
+def kind_colour(kind, mode=None):
     """The hex a kind is written in, or None for a kind nobody declared."""
-    return KIND_COLOURS.get(kind)
+    pair = KIND_COLOURS.get(kind)
+    return shade(pair, mode) if pair else None
 
 
 def kind_markdown(kind):
@@ -725,27 +812,29 @@ def kind_markdown(kind):
     return f":{name}[{label}]" if name else label
 
 
-def kind_key_rows():
+def kind_key_rows(mode=None):
     """The kind key: one row per kind, in the order a reader meets them."""
     return [
         {
             "kind": kind,
             "label": kind_label(kind),
-            "colour": KIND_COLOURS[kind],
+            "colour": kind_colour(kind, mode),
             "meaning": KIND_MEANINGS[kind],
         }
         for kind in scenarios.KINDS
     ]
 
 
-def comparison_styler(table):
+def comparison_styler(table, mode=None):
     """The comparison table with each run's kind in its kind's colour.
 
     The Kind column only. Streamlit takes the colours from a Styler and
     its own column_config still decides every number's format, which is
     what keeps 7d's one-format-per-measure rule true here.
     """
-    colour_of = {kind_label(kind): colour for kind, colour in KIND_COLOURS.items()}
+    colour_of = {
+        kind_label(kind): kind_colour(kind, mode) for kind in KIND_COLOURS
+    }
 
     def paint(column):
         return [
@@ -1369,18 +1458,28 @@ def plan_column_specs():
 # ---------------------------------------------------------------------------
 # Which region a row belongs to, and its tint (7d final pass, 11/19)
 #
-# WHY TINT THE ROWS AT ALL. The detail table is 780 rows of three
-# different things stacked: the North sites, the South sites, and the
-# back office, which is not at a site at all. Sorted by week, those
-# interleave, and a reader scanning for "what happened at the South
-# counter" has to read the Scope column on every line. A tint does that
-# reading for them.
+# WHY TINT AT ALL. The detail table is 780 rows of three different things
+# stacked: the North sites, the South sites, and the back office, which
+# is not at a site at all. Sorted by week, those interleave, and a reader
+# scanning for "what happened at the South counter" has to read the Scope
+# column on every line. A tint does that reading for them.
+#
+# THE SCOPE CELL, NOT THE ROW (Siri, 11/19). The first build tinted the
+# whole row. Seventeen columns of tinted background is a lot of colour
+# for one fact, it competes with the figures, which are the thing worth
+# looking at, and it reads as a judgement on the row rather than as a
+# label on its scope. One tinted cell, in the column the colour is
+# actually about, says the same thing and leaves the numbers alone.
 #
 # WHY NOT RED, GREEN OR BLUE. Those three are spoken for on the cards -
-# worse, better, no change - so a tinted row in one of them would look
-# like a verdict on that row. These three are very pale (every one keeps
-# charcoal text above 12:1, far past AA) and carry no meaning of their
-# own beyond "same region".
+# worse, better, no change - so a tint in one of them would look like a
+# verdict. These carry no meaning of their own beyond "same region", and
+# a test checks none of them is a card colour or the accent.
+#
+# ONE PAIR EACH. A pale sand that keeps charcoal text at 11.8:1 on a
+# cream page is invisible on a charcoal one, and off-white text on it
+# would be 1.2:1. So the dark shades are dark - the same three hues, deep
+# enough for the dark palette's off-white text to sit on them.
 #
 # THE DOWNLOAD IS NOT TOUCHED. A tint is a thing done to a screen; the
 # CSV is the same bytes it was, which a test checks.
@@ -1389,12 +1488,26 @@ def plan_column_specs():
 NETWORK_REGION = "network"
 
 REGION_TINTS = {
-    "north": "#f3ecdf",          # warm sand
-    "south": "#eae6f2",          # pale lilac
-    NETWORK_REGION: "#e5e6e8",   # pale neutral gray
+    "north": {
+        LIGHT_MODE: "#f0e2c8",       # warm sand
+        DARK_MODE: "#3a3228",        # the same sand, taken down
+    },
+    "south": {
+        LIGHT_MODE: "#e6def2",       # pale lilac
+        DARK_MODE: "#322c3e",        # deep lilac
+    },
+    NETWORK_REGION: {
+        LIGHT_MODE: "#e3e1dc",       # warm neutral gray
+        DARK_MODE: "#2c2e31",        # cool neutral gray
+    },
 }
 
-REGION_FALLBACK_TINT = "#ffffff"
+# No tint at all for a scope no cluster claims, rather than a white box
+# on a cream page or a pale box on a charcoal one. A test walks every
+# saved run, so in practice this is never reached - it is here so that a
+# site added to sites.yaml without a cluster degrades to "plain" instead
+# of to "wrong colour".
+REGION_FALLBACK_TINT = None
 
 
 def region_of(scope, dimensions=None):
@@ -1415,7 +1528,13 @@ def region_of(scope, dimensions=None):
     return None
 
 
-def region_key_rows(dimensions=None):
+def region_tint(region, mode=None):
+    """The tint one region wears in the palette being drawn."""
+    pair = REGION_TINTS.get(region)
+    return shade(pair, mode) if pair else REGION_FALLBACK_TINT
+
+
+def region_key_rows(dimensions=None, mode=None):
     """The region key: label, tint and what the tint covers."""
     dimensions = dimensions if dimensions is not None else api.dimensions()
     rows = []
@@ -1424,7 +1543,7 @@ def region_key_rows(dimensions=None):
             {
                 "region": cluster["code"],
                 "label": cluster["name"],
-                "colour": REGION_TINTS.get(cluster["code"], REGION_FALLBACK_TINT),
+                "colour": region_tint(cluster["code"], mode),
                 "meaning": ", ".join(cluster["sites"]),
             }
         )
@@ -1432,7 +1551,7 @@ def region_key_rows(dimensions=None):
         {
             "region": NETWORK_REGION,
             "label": f"{dimensions['network_code']} (back office)",
-            "colour": REGION_TINTS[NETWORK_REGION],
+            "colour": region_tint(NETWORK_REGION, mode),
             "meaning": ", ".join(
                 role["short_name"] for role in network_roles(dimensions)
             ),
@@ -1441,17 +1560,22 @@ def region_key_rows(dimensions=None):
     return rows
 
 
-def row_tints(view, dimensions=None):
-    """One tint per row of the plan view, in the view's own order."""
+def scope_tints(view, dimensions=None, mode=None):
+    """One tint per row of the plan view, in the view's own order.
+
+    One per ROW even though only the Scope cell wears it: the tint is a
+    fact about that row's scope, and the styler needs them lined up with
+    the rows to know which cell gets which.
+    """
     dimensions = dimensions if dimensions is not None else api.dimensions()
     return [
-        REGION_TINTS.get(region_of(scope, dimensions), REGION_FALLBACK_TINT)
+        region_tint(region_of(scope, dimensions), mode)
         for scope in view[SCOPE_HEADER]
     ]
 
 
-def plan_styler(view, dimensions=None, names=None):
-    """The plan view, rounded and named for a reader, tinted by region.
+def plan_styler(view, dimensions=None, names=None, mode=None):
+    """The plan view, rounded and named for a reader, Scope cell tinted.
 
     Streamlit takes the colours from a Styler and keeps its own
     column_config for every number's format - its words: "Text and
@@ -1460,18 +1584,23 @@ def plan_styler(view, dimensions=None, names=None):
     quietly undo 7d's one-format-per-measure rule.
     """
     shown = plan_display(view, names=names)
-    if SCOPE_HEADER not in view.columns:
+    if SCOPE_HEADER not in view.columns or SCOPE_HEADER not in shown.columns:
         return shown.style
-    # Keyed by the index LABEL rather than by position: pandas hands
-    # `apply(axis=1)` a row whose .name is its label, and a view that
-    # arrived with anything but a 0..n index would otherwise be tinted
-    # off by however much the labels differ.
-    tint_of = dict(zip(view.index, row_tints(view, dimensions)))
+    # Keyed by the index LABEL rather than by position: pandas hands the
+    # painter a column whose index is the frame's own labels, and a view
+    # that arrived with anything but a 0..n index would otherwise be
+    # tinted off by however much the labels differ.
+    tint_of = dict(zip(view.index, scope_tints(view, dimensions, mode)))
 
-    def paint(row):
-        return [f"background-color: {tint_of[row.name]}"] * len(row)
+    def paint(column):
+        return [
+            f"background-color: {tint_of[label]}" if tint_of[label] else ""
+            for label in column.index
+        ]
 
-    return shown.style.apply(paint, axis=1)
+    # ONE COLUMN, BY NAME. Every other cell is left exactly as it was,
+    # which is the whole point of moving off the row.
+    return shown.style.apply(paint, subset=[SCOPE_HEADER])
 
 
 # ---------------------------------------------------------------------------
@@ -1526,10 +1655,15 @@ def _channel(value):
     return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
 
 
+def _parts(colour):
+    """The three 0-255 parts of a #rrggbb colour."""
+    digits = colour.lstrip("#")
+    return tuple(int(digits[at:at + 2], 16) for at in (0, 2, 4))
+
+
 def relative_luminance(colour):
     """WCAG relative luminance of a #rrggbb colour."""
-    digits = colour.lstrip("#")
-    red, green, blue = (int(digits[at:at + 2], 16) for at in (0, 2, 4))
+    red, green, blue = _parts(colour)
     return (
         0.2126 * _channel(red)
         + 0.7152 * _channel(green)
@@ -1551,6 +1685,133 @@ def contrast_ratio(one, other):
 
 AA_TEXT = 4.5
 AA_LARGE = 3.0
+
+
+def _lab(colour):
+    """A colour in CIE L*a*b*, which is laid out the way eyes see.
+
+    sRGB distances lie: #000080 and #0000a0 are 32 apart in RGB and all
+    but identical to look at, while two pale tints 32 apart can be
+    obviously different colours. Lab is built so that a step of the same
+    size looks like a step of the same size, which is what lets the
+    question "could a reader mistake these two for each other?" be
+    answered with a number instead of a shrug.
+    """
+    red, green, blue = (_channel(part) for part in _parts(colour))
+    # sRGB primaries under D65, the white point every screen claims.
+    x = 0.4124 * red + 0.3576 * green + 0.1805 * blue
+    y = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    z = 0.0193 * red + 0.1192 * green + 0.9505 * blue
+
+    def bend(value):
+        return value ** (1 / 3) if value > 216 / 24389 else (841 / 108) * value + 4 / 29
+
+    fx, fy, fz = bend(x / 0.95047), bend(y / 1.0), bend(z / 1.08883)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def colour_distance(one, other):
+    """How far apart two colours look: CIE76 delta-E.
+
+    Roughly: under 2 is a match nobody can see, around 10 is clearly a
+    different colour, and over 40 is "nobody would ever confuse these".
+    Used to hold the palette to Siri's rule that the no-change blue must
+    not read as the teal accent, and that no two meanings share a look.
+    """
+    return math.dist(_lab(one), _lab(other))
+
+
+# How far apart two colours have to be before this model will let them
+# both carry meaning on the same page. There are two bars, because the
+# page asks two different things of a reader.
+#
+# DISTINCT (40) is "could not be confused, even from memory". It applies
+# where a colour is the ONLY thing carrying the difference and the things
+# it separates are the same kind of object in the same place: the three
+# card verdicts against each other, the three kinds against each other,
+# and every card verdict against the teal accent - Siri's own rule, since
+# an accent-coloured control that read as "no change" would be a lie
+# about a number. 40 is well past the textbook "clearly different" mark.
+#
+# DIFFERENT (20) is "obviously another colour". It applies where the
+# colour is a second signal rather than the only one, or where the two
+# things are never the same kind of object: a kind is always printed as
+# its own word (Choice, Risk, Sensitivity) and a card always states its
+# direction in words and an arrow, so a reader who could not separate a
+# kind label from a card colour still loses nothing. Holding those pairs
+# to 40 would be over-specification, and it is unreachable besides: the
+# sensitivity gray is a NEUTRAL, and a neutral cannot be 40 from a
+# mid-chroma teal at any lightness that keeps them both readable.
+DISTINCT = 40.0
+DIFFERENT = 20.0
+
+
+# ---------------------------------------------------------------------------
+# The theme's own four colours, in both palettes
+#
+# These are the same hexes .streamlit/config.toml holds, and a test fails
+# if the two ever disagree. They are repeated here because every contrast
+# check in the suite needs a BACKGROUND to measure against, and a test
+# that parsed the TOML to get one would pass happily if somebody deleted
+# the section it was reading.
+#
+# WHY CREAM AND NOT WHITE. Siri's call (11/19): a pure white page is the
+# one background that makes a table of figures look like a spreadsheet,
+# and a warm cream reads as a document. The dark palette answers it with
+# a deep charcoal rather than black, for the same reason in reverse -
+# black plus off-white is glare.
+#
+# WHY TEAL. The page already spends six colours on meaning - better,
+# worse, no change, and the three scenario kinds - so the accent on every
+# slider, button and focus ring has to be a colour that means nothing. A
+# test holds it at arm's length (delta-E) from all six.
+# ---------------------------------------------------------------------------
+
+ACCENT_COLOURS = {
+    LIGHT_MODE: "#3a7a8c",   # teal, white label at 4.84:1
+    DARK_MODE: "#107e9c",    # the same teal, more vivid: label at 4.68:1
+}
+PAGE_COLOURS = {
+    LIGHT_MODE: "#faf7f2",   # warm cream, never pure white
+    DARK_MODE: "#191b1e",    # deep charcoal, never pure black
+}
+SIDEBAR_COLOURS = {
+    LIGHT_MODE: "#f1ebe0",   # a step darker, so the panel reads as a panel
+    DARK_MODE: "#232629",    # a step lighter, for the same reason
+}
+TEXT_COLOURS = {
+    LIGHT_MODE: "#24262b",   # dark charcoal, 14.17:1 on the cream page
+    DARK_MODE: "#edeae4",    # warm off-white, 14.37:1 on the charcoal page
+}
+
+# Keyed by the config.toml option each one sets, so a test can walk the
+# file and this table together instead of naming four pairs by hand.
+THEME_COLOURS = {
+    "primaryColor": ACCENT_COLOURS,
+    "backgroundColor": PAGE_COLOURS,
+    "secondaryBackgroundColor": SIDEBAR_COLOURS,
+    "textColor": TEXT_COLOURS,
+}
+
+
+def page_colour(mode=None):
+    """The background a card, a chart and a key are drawn on."""
+    return shade(PAGE_COLOURS, mode)
+
+
+def sidebar_colour(mode=None):
+    """The background the run picker and its kind captions are drawn on."""
+    return shade(SIDEBAR_COLOURS, mode)
+
+
+def text_colour(mode=None):
+    """The body text colour, which is what sits on a scope tint."""
+    return shade(TEXT_COLOURS, mode)
+
+
+def accent_colour(mode=None):
+    """The teal on sliders, buttons, toggles and focus outlines."""
+    return shade(ACCENT_COLOURS, mode)
 
 
 # ---------------------------------------------------------------------------

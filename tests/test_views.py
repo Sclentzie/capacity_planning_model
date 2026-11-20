@@ -774,29 +774,34 @@ def test_every_measure_is_read_the_same_way(results):
         if card["measure"] == "network_required_fte"
     )
     assert fewer["difference"] < 0
-    assert views.card_colour(fewer) == views.BETTER_COLOUR
+    assert views.card_colour(fewer) == views.shade(views.BETTER_COLOURS)
 
     more = next(
         card for card in views.headline_cards(results, "combined")
         if card["measure"] == "network_required_fte"
     )
     assert more["difference"] > 0
-    assert views.card_colour(more) == views.WORSE_COLOUR
+    assert views.card_colour(more) == views.shade(views.WORSE_COLOURS)
 
 
-def test_every_card_on_every_run_follows_the_colour_rule(results):
+@pytest.mark.parametrize("mode", views.MODES)
+def test_every_card_on_every_run_follows_the_colour_rule(results, mode):
     """One rule, stated here independently of the code that applies it.
 
     Green moved the way a planner wants, red the other way, blue did not
     move at all, and the baseline has nothing to compare against. Checked
     on all six cards of all 21 runs, because a rule that holds for the
     run someone looked at is not a rule.
+
+    Run twice, once per palette (11/19). The MEANING of a colour must not
+    depend on the mode: if a dark-mode card ever called a saving red, the
+    two palettes would have become two different languages.
     """
     for key in results["scenarios"]:
         for card in views.headline_cards(results, key):
-            colour = views.card_colour(card)
+            colour = views.card_colour(card, mode)
             difference = card["difference"]
-            where = f"{key}/{card['measure']}"
+            where = f"{mode}/{key}/{card['measure']}"
 
             if difference is None:
                 assert key == views.BASELINE_KEY, where
@@ -805,16 +810,16 @@ def test_every_card_on_every_run_follows_the_colour_rule(results):
                 continue
 
             if round(difference, views.DISPLAY_DECIMALS[card["format"]]) == 0:
-                assert colour == views.SAME_COLOUR, where
+                assert colour == views.shade(views.SAME_COLOURS, mode), where
                 assert card["difference_text"] == views.NO_CHANGE, where
                 # No arrow: an arrow is a claim about direction, and a
                 # difference that rounds away has none to report.
                 assert views.card_arrow(card) == "", where
             elif difference < 0:
-                assert colour == views.BETTER_COLOUR, where
+                assert colour == views.shade(views.BETTER_COLOURS, mode), where
                 assert views.card_arrow(card) == views.DOWN_ARROW, where
             else:
-                assert colour == views.WORSE_COLOUR, where
+                assert colour == views.shade(views.WORSE_COLOURS, mode), where
                 assert views.card_arrow(card) == views.UP_ARROW, where
 
 
@@ -837,7 +842,7 @@ def test_a_difference_that_rounds_away_says_so_instead_of_showing_zero(results):
 
     assert card["no_change"] is True
     assert card["difference_text"] == views.NO_CHANGE
-    assert views.card_colour(card) == views.SAME_COLOUR
+    assert views.card_colour(card) == views.shade(views.SAME_COLOURS)
     assert views.card_arrow(card) == ""
 
     # Nothing hidden: the hover carries the figure the card rounded.
@@ -846,7 +851,7 @@ def test_a_difference_that_rounds_away_says_so_instead_of_showing_zero(results):
     assert "rounds to nothing" in tooltip
 
     markup = views.card_html(card)
-    assert views.SAME_COLOUR in markup
+    assert views.shade(views.SAME_COLOURS) in markup
     assert views.NO_CHANGE in markup
     assert views.UP_ARROW not in markup and views.DOWN_ARROW not in markup
 
@@ -929,7 +934,10 @@ def test_the_page_shows_a_no_change_card_in_blue(results):
         if type(element).__name__ == "Markdown"
         and "cm-card-value" in str(element.value)
     ]
-    blue = [markup for markup in cards if views.SAME_COLOUR in markup]
+    blue = [
+        markup for markup in cards
+        if views.shade(views.SAME_COLOURS) in markup
+    ]
     assert blue, "no card reached the page in blue"
     assert all(views.NO_CHANGE in markup for markup in blue)
     assert all(
@@ -1253,27 +1261,23 @@ def test_every_card_filter_and_control_has_help_text(results):
 
 
 # ---------------------------------------------------------------------------
-# The theme, the regions and the kinds (final pass, 11/19)
+# The two palettes, the scope tints and the kinds (7d, 11/19)
 # ---------------------------------------------------------------------------
 
 THEME_FILE = Path(__file__).resolve().parents[1] / ".streamlit" / "config.toml"
 
-# What Siri asked for, in hex, so a colour cannot drift without this
-# saying so. The file is the thing the hosted app reads, and these are
-# the values it has to hold.
-THEME = {
-    "primaryColor": "#4a5560",            # gunmetal gray
-    "backgroundColor": "#f4f4f6",         # soft light gray page
-    "secondaryBackgroundColor": "#e6e7eb",  # one step darker: sidebar
-    "textColor": "#24262b",               # dark charcoal
-}
-
 
 def theme():
+    """The committed theme file, as a dict."""
     import tomllib
 
     with open(THEME_FILE, "rb") as handle:
         return tomllib.load(handle)["theme"]
+
+
+def palette(mode):
+    """One mode's section of that file: [theme.light] or [theme.dark]."""
+    return theme()[mode]
 
 
 def test_the_theme_is_committed_with_the_app(results):
@@ -1284,14 +1288,74 @@ def test_the_theme_is_committed_with_the_app(results):
     """
     assert THEME_FILE.exists(), "the hosted app would fall back to white"
     settings = theme()
-    for option, colour in THEME.items():
-        assert settings[option] == colour, option
-    assert settings["base"] == "light"
-    # The sidebar is the darker gray, which is what makes it read as a
-    # panel beside the page rather than part of it.
-    assert settings["sidebar"]["backgroundColor"] == (
-        THEME["secondaryBackgroundColor"]
-    )
+    for mode in views.MODES:
+        assert mode in settings, f"no [theme.{mode}] section"
+        for option, pair in views.THEME_COLOURS.items():
+            assert settings[mode][option] == views.shade(pair, mode), (
+                f"theme.{mode}.{option}"
+            )
+        # The sidebar is the neighbouring shade, which is what makes it
+        # read as a panel beside the page rather than part of it.
+        assert settings[mode]["sidebar"]["backgroundColor"] == (
+            views.sidebar_colour(mode)
+        )
+
+
+def test_both_palettes_exist_and_nothing_is_shared_between_them():
+    """Siri 11/19, and the trap this avoids.
+
+    Streamlit merges a bare [theme] section FIRST and then lays the
+    active variant over it, so a colour left in [theme] applies to both
+    palettes until the other one happens to override it. A cream page up
+    there would leak into dark mode. So every colour lives in its own
+    section, and this fails if one creeps back up.
+
+    It also checks that both sections carry colours at all, because that
+    - and only that - is what makes Streamlit offer its System / Light /
+    Dark switch. One palette and the switch is hidden.
+    """
+    settings = theme()
+    shared = {
+        name: value for name, value in settings.items()
+        if not isinstance(value, dict)
+    }
+    assert not shared, f"these would apply to BOTH palettes: {shared}"
+
+    for mode in views.MODES:
+        colours = [
+            name for name in palette(mode) if name.lower().endswith("color")
+        ]
+        assert colours, f"[theme.{mode}] sets no colours"
+
+
+def test_streamlit_can_see_both_palettes(results):
+    """Checked through Streamlit's own serialiser, not just the TOML.
+
+    Parsing the file ourselves proves the file is right; it does not
+    prove Streamlit agrees. This runs the config through the same
+    function app_session uses to fill the message the browser is sent,
+    so a section Streamlit silently drops fails here.
+    """
+    from streamlit import config
+    from streamlit.proto.NewSession_pb2 import NewSession
+    from streamlit.runtime.app_session import _populate_theme_msg
+
+    config.get_config_options()
+    message = NewSession().custom_theme
+    _populate_theme_msg(message, "theme")
+    for mode in views.MODES:
+        variant = getattr(message, mode)
+        _populate_theme_msg(variant, f"theme.{mode}")
+        _populate_theme_msg(variant.sidebar, f"theme.{mode}.sidebar")
+        assert variant.background_color == views.page_colour(mode), mode
+        assert variant.primary_color == views.accent_colour(mode), mode
+        assert variant.text_color == views.text_colour(mode), mode
+        assert variant.sidebar.background_color == views.sidebar_colour(mode)
+
+    # And nothing in the shared message, which is the leak above again,
+    # seen from the other side.
+    assert message.background_color == ""
+    assert message.primary_color == ""
 
 
 def test_every_option_in_the_theme_file_is_one_streamlit_accepts():
@@ -1315,92 +1379,159 @@ def test_every_option_in_the_theme_file_is_one_streamlit_accepts():
     assert not unknown, f"Streamlit does not know: {unknown}"
 
 
-def test_the_theme_passes_wcag_aa(results):
-    """Measured, not eyeballed. AA is 4.5:1 for ordinary text and 3:1 for
-    a control's own edge.
+@pytest.mark.parametrize("mode", views.MODES)
+def test_the_theme_passes_wcag_aa(results, mode):
+    """Measured, not eyeballed, in BOTH palettes. AA is 4.5:1 for
+    ordinary text and 3:1 for a control's own edge.
+
+    Run once per mode because a ratio is a fact about a colour AND its
+    background, and the two palettes have different backgrounds: the
+    light shades were measured on cream and are meaningless on charcoal.
     """
-    page = THEME["backgroundColor"]
-    sidebar = THEME["secondaryBackgroundColor"]
-    text = THEME["textColor"]
-    primary = THEME["primaryColor"]
+    page = views.page_colour(mode)
+    sidebar = views.sidebar_colour(mode)
+    text = views.text_colour(mode)
+    primary = views.accent_colour(mode)
 
     assert views.contrast_ratio(text, page) >= views.AA_TEXT
     assert views.contrast_ratio(text, sidebar) >= views.AA_TEXT
-    # A primary-coloured button is drawn with a white label on it.
+    # The Run button is a primary button, so the teal carries a white
+    # label - in both modes, which is what pins how light the dark teal
+    # is allowed to be.
     assert views.contrast_ratio("#ffffff", primary) >= views.AA_TEXT
     # And its own edge against the page, which is a graphic, not text.
     assert views.contrast_ratio(primary, page) >= views.AA_LARGE
 
-    # Charcoal on each region tint: the tints are pale for this reason.
-    for tint in views.REGION_TINTS.values():
-        assert views.contrast_ratio(text, tint) >= views.AA_TEXT, tint
+    # The mode's own body text on each scope tint - which is why the dark
+    # tints are dark and the light ones pale, rather than one set of
+    # three used twice.
+    for region in views.REGION_TINTS:
+        tint = views.region_tint(region, mode)
+        assert views.contrast_ratio(text, tint) >= views.AA_TEXT, (region, tint)
 
     # Every kind label, on both backgrounds it is written on.
-    for kind, colour in views.KIND_COLOURS.items():
+    for kind in views.KIND_COLOURS:
+        colour = views.kind_colour(kind, mode)
         assert views.contrast_ratio(colour, page) >= views.AA_TEXT, kind
         assert views.contrast_ratio(colour, sidebar) >= views.AA_TEXT, kind
 
 
-def test_the_contrast_arithmetic_is_right():
-    """The yardstick the test above leans on, against known values."""
-    assert views.contrast_ratio("#000000", "#ffffff") == pytest.approx(21.0)
-    assert views.contrast_ratio("#ffffff", "#ffffff") == pytest.approx(1.0)
-    # The textbook pair: #767676 is the lightest gray that passes AA on
-    # white, at 4.54:1.
-    assert views.contrast_ratio("#767676", "#ffffff") == pytest.approx(
-        4.54, abs=0.01
-    )
-
-
-def test_no_colour_on_the_page_means_two_things(results):
+@pytest.mark.parametrize("mode", views.MODES)
+def test_no_colour_on_the_page_means_two_things(results, mode):
     """Red, green and blue are spoken for by the cards (11/16), so no
-    kind and no region may wear one of them - a tinted row or a kind
-    label in red would read as a verdict.
-    """
-    cards = {views.BETTER_COLOUR, views.WORSE_COLOUR, views.SAME_COLOUR}
-    kinds = set(views.KIND_COLOURS.values())
-    regions = set(views.REGION_TINTS.values())
+    kind, no scope tint and not the accent may wear one of them - a
+    tinted cell or a kind label in red would read as a verdict.
 
-    assert not kinds & cards
-    assert not regions & cards
-    assert not kinds & regions
-    assert len(kinds) == len(views.KIND_COLOURS)
-    assert len(regions) == len(views.REGION_TINTS)
+    Not just "is a different hex", which two near-identical colours pass
+    while looking the same: held apart by delta-E, so the question asked
+    is the reader's one - could these be confused?
+    """
+    cards = {
+        name: views.shade(pair, mode) for name, pair in (
+            ("better", views.BETTER_COLOURS),
+            ("worse", views.WORSE_COLOURS),
+            ("no change", views.SAME_COLOURS),
+        )
+    }
+    kinds = {kind: views.kind_colour(kind, mode) for kind in views.KIND_COLOURS}
+    regions = {
+        region: views.region_tint(region, mode) for region in views.REGION_TINTS
+    }
+    accent = views.accent_colour(mode)
+
+    # Distinct hexes first - the cheap check, and the one whose failure
+    # message is easiest to read.
+    assert len(set(cards.values())) == 3
+    assert len(set(kinds.values())) == len(views.KIND_COLOURS)
+    assert len(set(regions.values())) == len(views.REGION_TINTS)
+    assert not set(kinds.values()) & set(cards.values())
+    assert not set(regions.values()) & set(cards.values())
+    assert not set(kinds.values()) & set(regions.values())
+
+    # Then far enough apart to be TOLD apart, which distinct hexes do not
+    # guarantee. Two bars, for the two things the page asks of a reader -
+    # views.DISTINCT and views.DIFFERENT carry the reasoning. Scope tints
+    # are left out: they are pale backgrounds in one column rather than
+    # labels, and they are already held off the card colours above.
+    def apart(one, other, bar, group):
+        distance = views.colour_distance(labels[one], labels[other])
+        assert distance >= bar, (
+            f"{mode}, {group}: {one} {labels[one]} and {other} "
+            f"{labels[other]} are only {distance:.1f} apart (needs {bar})"
+        )
+
+    labels = {**cards, **kinds, "accent": accent}
+    card_names = sorted(cards)
+    kind_names = sorted(kinds)
+
+    # Unmistakable: colour is the only thing separating these.
+    for at, one in enumerate(card_names):
+        for other in card_names[at + 1:]:
+            apart(one, other, views.DISTINCT, "the three verdicts")
+    for at, one in enumerate(kind_names):
+        for other in kind_names[at + 1:]:
+            apart(one, other, views.DISTINCT, "the three kinds")
+    for one in card_names:
+        apart(one, "accent", views.DISTINCT, "a verdict against the accent")
+
+    # Obviously another colour: these never stand in for each other, and
+    # each one carries its own word as well as its colour.
+    for one in kind_names:
+        apart(one, "accent", views.DIFFERENT, "a kind against the accent")
+        for other in card_names:
+            apart(one, other, views.DIFFERENT, "a kind against a verdict")
+
+    # Siri's own instruction, named: the no-change blue must not read as
+    # the teal accent. Covered by the sweep above, asserted again here so
+    # that the requirement has a line of its own to fail on.
+    assert views.colour_distance(cards["no change"], accent) >= views.DISTINCT
+
     # The kinds are written in Streamlit's own palette, and the three
-    # names it offers outside red, green and blue are these.
+    # names it offers outside red, green and blue are these. The NAME is
+    # the same in both modes; the theme file gives it a hex per mode.
     assert set(views.KIND_MARKDOWN.values()) <= {"violet", "orange", "gray"}
 
 
-def test_every_card_colour_passes_wcag_aa(results):
+@pytest.mark.parametrize("mode", views.MODES)
+def test_every_card_colour_passes_wcag_aa(results, mode):
     """Siri 11/19. The three began as Streamlit's own, and measuring them
-    for the theme pass showed two of them never reached AA as small text:
-    green at 2.8:1 and red at 3.4:1 against the page, and 3.0 and 3.7
-    against the white page they sat on before that. Looking like the rest
-    of the page is worth less than being readable, so the green and the
-    red are darker and the blue, which already passed, is untouched.
+    showed two of them never reached AA as small text: green at 2.8:1 and
+    red at 3.4:1 against the page. Looking like the rest of the page is
+    worth less than being readable, so the light shades are darker.
+
+    Now in both palettes, which is the harder half: a card colour dark
+    enough to read on cream is all but invisible on charcoal - the light
+    green is 1.4:1 there. So each one is a pair, and each shade is
+    measured against the page it is actually drawn on.
 
     Held here rather than in a comment, because the next person to reach
     for a brighter green should have to argue with a test.
     """
-    page = THEME["backgroundColor"]
-    for name, colour in (
-        ("better", views.BETTER_COLOUR),
-        ("worse", views.WORSE_COLOUR),
-        ("no change", views.SAME_COLOUR),
+    page = views.page_colour(mode)
+    for name, pair in (
+        ("better", views.BETTER_COLOURS),
+        ("worse", views.WORSE_COLOURS),
+        ("no change", views.SAME_COLOURS),
     ):
+        colour = views.shade(pair, mode)
         ratio = views.contrast_ratio(colour, page)
-        assert ratio >= views.AA_TEXT, f"{name} {colour} is {ratio:.2f}:1"
+        assert ratio >= views.AA_TEXT, (
+            f"{mode}: {name} {colour} is {ratio:.2f}:1 on {page}"
+        )
 
-    # Still three distinguishable colours, and still the three a reader
-    # was taught: a darker green is a green.
-    assert len({views.BETTER_COLOUR, views.WORSE_COLOUR, views.SAME_COLOUR}) == 3
-    for colour in (views.BETTER_COLOUR, views.WORSE_COLOUR, views.SAME_COLOUR):
+    # Still the three a reader was taught: a lighter green is a green,
+    # and a darker one is too. Checked in both modes, because a pastel
+    # that drifted into cyan would still pass every contrast check above
+    # while quietly changing what "better" looks like.
+    for name, pair in (
+        ("better", views.BETTER_COLOURS),
+        ("worse", views.WORSE_COLOURS),
+        ("no change", views.SAME_COLOURS),
+    ):
+        colour = views.shade(pair, mode)
         red, green, blue = (int(colour[at:at + 2], 16) for at in (1, 3, 5))
-        assert max(red, green, blue) == {
-            views.BETTER_COLOUR: green,
-            views.WORSE_COLOUR: red,
-            views.SAME_COLOUR: blue,
-        }[colour], colour
+        strongest = {"better": green, "worse": red, "no change": blue}[name]
+        assert max(red, green, blue) == strongest, f"{mode}: {name} {colour}"
 
 
 def test_a_card_never_leans_on_colour_alone(results):
@@ -1425,11 +1556,13 @@ def test_the_theme_file_and_the_kind_colours_agree():
     which resolves the NAME against this file, while the comparison
     table paints the cell with the hex from views.
     """
-    settings = theme()
-    for kind, colour in views.KIND_COLOURS.items():
-        name = views.KIND_MARKDOWN[kind]
-        assert settings[f"{name}Color"] == colour, kind
-        assert settings["sidebar"][f"{name}Color"] == colour, kind
+    for mode in views.MODES:
+        settings = palette(mode)
+        for kind in views.KIND_COLOURS:
+            colour = views.kind_colour(kind, mode)
+            name = views.KIND_MARKDOWN[kind]
+            assert settings[f"{name}Color"] == colour, (mode, kind)
+            assert settings["sidebar"][f"{name}Color"] == colour, (mode, kind)
 
 
 def test_every_kind_has_a_colour_a_label_and_one_line_of_meaning():
@@ -1460,20 +1593,22 @@ def test_every_run_s_kind_is_a_kind_with_a_colour(results):
 
 
 # ---------------------------------------------------------------------------
-# Rows tinted by region
+# The Scope cell, tinted by region
 # ---------------------------------------------------------------------------
 
 
 def test_every_scope_in_every_run_has_a_region_and_a_tint(results, dimensions):
     """Walked over every saved run's plan, so a scope the model produces
     and this does not know about shows up here rather than as an
-    untinted row on the page.
+    untinted cell on the page. Both palettes, because a region added
+    with only a light shade would be a blank cell in dark mode.
     """
     for key, run in results["scenarios"].items():
         for scope in set(run["plan"]["scope"]):
             region = views.region_of(scope, dimensions)
             assert region is not None, f"{key}: no region for {scope!r}"
-            assert views.REGION_TINTS.get(region), f"{scope}: no tint"
+            for mode in views.MODES:
+                assert views.region_tint(region, mode), f"{scope}: no {mode} tint"
 
 
 def test_the_region_is_read_from_the_clusters_not_from_the_code(dimensions):
@@ -1503,22 +1638,83 @@ def test_the_back_office_is_its_own_region(dimensions):
         assert role["short_name"] in network["meaning"]
 
 
-def test_the_plan_styler_tints_each_row_by_its_region(results, dimensions):
-    """Row by row, against the scope in that row."""
+@pytest.mark.parametrize("mode", views.MODES)
+def test_the_plan_styler_tints_each_scope_by_its_region(
+    results, dimensions, mode
+):
+    """Row by row, against the scope in that row, in each palette."""
     plan = results["scenarios"]["baseline"]["plan"]
     view = views.plan_view(plan)
-    tints = views.row_tints(view, dimensions)
+    tints = views.scope_tints(view, dimensions, mode)
     assert len(tints) == len(view)
     for scope, tint in zip(view[views.SCOPE_HEADER], tints):
-        expected = views.REGION_TINTS[views.region_of(scope, dimensions)]
-        assert tint == expected, scope
+        region = views.region_of(scope, dimensions)
+        assert tint == views.region_tint(region, mode), scope
     # All three tints really are in use on a network-wide view.
-    assert set(tints) == set(views.REGION_TINTS.values())
+    assert set(tints) == {
+        views.region_tint(region, mode) for region in views.REGION_TINTS
+    }
 
-    styler = views.plan_styler(view, dimensions)
+    styler = views.plan_styler(view, dimensions, mode=mode)
     rendered = styler.to_html()
-    for tint in views.REGION_TINTS.values():
-        assert f"background-color: {tint}" in rendered
+    for region in views.REGION_TINTS:
+        tint = views.region_tint(region, mode)
+        assert f"background-color: {tint}" in rendered, (mode, region)
+
+    # And the OTHER palette's tints are nowhere in it: one render is one
+    # palette, not a hedge between them.
+    other = views.DARK_MODE if mode == views.LIGHT_MODE else views.LIGHT_MODE
+    for region in views.REGION_TINTS:
+        stray = views.region_tint(region, other)
+        assert f"background-color: {stray}" not in rendered, (other, region)
+
+
+def test_the_tint_lands_on_the_scope_cell_and_nowhere_else(
+    results, dimensions
+):
+    """Siri 11/19: the colour goes on the Scope cell, not the whole row.
+
+    Counted, not spot-checked. A row-wide tint puts a background on all
+    seventeen columns of every row - which is what this used to do - and
+    that passes any test that only asks "is the tint in there?". So the
+    tinted cells are read back out of the Styler's own rendered CSS,
+    which names every one of them as row and column, and both the column
+    and the count have to come out right.
+    """
+    view = views.plan_view(results["scenarios"]["baseline"]["plan"]).head(40)
+    headers = list(views.plan_display(view).columns)
+    scope_at = headers.index(views.SCOPE_HEADER)
+
+    rendered = views.plan_styler(view, dimensions).to_html()
+    # pandas names every styled cell in the CSS it renders, and GROUPS
+    # the cells that share a style under one selector list:
+    #   "#T_a_row0_col3, #T_a_row1_col3 { background-color: #f0e2c8; }"
+    # So each rule is taken whole and every cell in its selector list is
+    # counted - reading only the selector next to the brace would find
+    # three cells here instead of forty.
+    tinted = set()
+    for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", rendered):
+        if "background-color" not in body:
+            continue
+        for row, column in re.findall(r"_row(\d+)_col(\d+)", selectors):
+            tinted.add((int(row), int(column)))
+    assert tinted, "nothing was tinted at all"
+    assert {column for _row, column in tinted} == {scope_at}, (
+        f"a tint reached a column that is not Scope ({scope_at}): "
+        f"{sorted({column for _row, column in tinted})}"
+    )
+    assert len(tinted) == len(view), (
+        f"{len(tinted)} tinted cells for {len(view)} rows - expected one each"
+    )
+
+    # Said the other way round, which is the part a reader notices: the
+    # figures keep the page's own background. Every column but Scope is
+    # untouched, whatever it holds.
+    assert len(headers) > 1
+    for at, header in enumerate(headers):
+        if at == scope_at:
+            continue
+        assert not [key for key in tinted if key[1] == at], header
 
 
 def test_the_tints_leave_the_figures_and_the_download_alone(
@@ -1529,14 +1725,17 @@ def test_the_tints_leave_the_figures_and_the_download_alone(
     """
     view = views.plan_view(results["scenarios"]["volume_plus_15"]["plan"])
     plain = views.plan_display(view)
-    styled = views.plan_styler(view, dimensions)
-
-    assert styled.data.equals(plain)
-    assert views.csv_bytes(view) == views.csv_bytes(view)
     text = views.csv_bytes(view).decode("utf-8")
+
+    for mode in views.MODES:
+        styled = views.plan_styler(view, dimensions, mode=mode)
+        assert styled.data.equals(plain), mode
+
+    assert views.csv_bytes(view) == views.csv_bytes(view)
     assert "background-color" not in text
-    for tint in views.REGION_TINTS.values():
-        assert tint not in text
+    for region in views.REGION_TINTS:
+        for mode in views.MODES:
+            assert views.region_tint(region, mode) not in text
 
 
 # ---------------------------------------------------------------------------
@@ -1590,13 +1789,305 @@ def test_the_detail_table_keeps_its_formats_under_the_tints(results):
     always takes precedence over text and number formatting from
     pandas.Styler". Checked on the real page, because that rule is the
     whole reason the tints are safe to add.
+
+    Light shades, because AppTest reports no theme type and the app falls
+    back to light - which is the same default a first page view gets
+    before the browser has told Streamlit anything.
     """
     app = app_test().run()
     assert not app.exception
     proto = app.dataframe[0].proto
     assert proto.arrow_data.styler.styles, "no tints in the dataframe proto"
-    for tint in views.REGION_TINTS.values():
-        assert tint in proto.arrow_data.styler.styles, tint
+    for region in views.REGION_TINTS:
+        tint = views.region_tint(region, views.LIGHT_MODE)
+        assert tint in proto.arrow_data.styler.styles, (region, tint)
     # And the column settings are still there, money format and all.
     assert "$%,.0f" in proto.columns
     assert "%,.1f" in proto.columns
+
+
+# ---------------------------------------------------------------------------
+# Picking a shade at render time (7d, 11/19)
+# ---------------------------------------------------------------------------
+
+
+def test_the_shade_lookup_answers_with_the_right_mode():
+    """The one function every custom colour goes through.
+
+    Worth a test of its own because every other colour test leans on it:
+    if shade() ever returned the light hex for dark mode, each AA check
+    would still pass - it would be measuring the wrong colour against the
+    right background and getting a true answer to the wrong question.
+    """
+    pair = {views.LIGHT_MODE: "#111111", views.DARK_MODE: "#eeeeee"}
+    assert views.shade(pair, views.LIGHT_MODE) == "#111111"
+    assert views.shade(pair, views.DARK_MODE) == "#eeeeee"
+
+    # No mode, or a mode nobody has heard of, is light - never an
+    # exception, because a theme is not worth a blank page.
+    assert views.DEFAULT_MODE == views.LIGHT_MODE
+    for nonsense in (None, "", "Dark", "auto", "system", 0, object()):
+        assert views.resolve_mode(nonsense) == views.LIGHT_MODE, nonsense
+        assert views.shade(pair, nonsense) == "#111111", nonsense
+    for mode in views.MODES:
+        assert views.resolve_mode(mode) == mode
+
+
+def test_every_custom_colour_has_both_shades():
+    """Walked over the colours themselves, so a colour added later cannot
+    be half a pair - which would be a KeyError on somebody's dark-mode
+    screen and nowhere else.
+    """
+    pairs = {
+        "better card": views.BETTER_COLOURS,
+        "worse card": views.WORSE_COLOURS,
+        "no-change card": views.SAME_COLOURS,
+        "accent": views.ACCENT_COLOURS,
+        "page": views.PAGE_COLOURS,
+        "sidebar": views.SIDEBAR_COLOURS,
+        "text": views.TEXT_COLOURS,
+        **{f"{kind} kind": pair for kind, pair in views.KIND_COLOURS.items()},
+        **{f"{region} tint": pair for region, pair in views.REGION_TINTS.items()},
+    }
+    for name, pair in pairs.items():
+        assert set(pair) == set(views.MODES), f"{name}: {sorted(pair)}"
+        for mode in views.MODES:
+            colour = pair[mode]
+            assert re.fullmatch(r"#[0-9a-f]{6}", colour), f"{name}/{mode}"
+        # A pair whose two shades are the same hex is a pair that was
+        # never thought about. The no-change blue is the one colour that
+        # could legitimately repeat, and it does not.
+        assert pair[views.LIGHT_MODE] != pair[views.DARK_MODE], name
+
+
+def test_the_contrast_and_distance_arithmetic_is_right():
+    """The two yardsticks every colour test leans on, against known
+    values, so a bug in the maths cannot quietly pass the palette.
+    """
+    assert views.contrast_ratio("#000000", "#ffffff") == pytest.approx(21.0)
+    assert views.contrast_ratio("#ffffff", "#ffffff") == pytest.approx(1.0)
+    # The textbook pair: #767676 is the lightest gray that passes AA on
+    # white, at 4.54:1.
+    assert views.contrast_ratio("#767676", "#ffffff") == pytest.approx(
+        4.54, abs=0.01
+    )
+    # Delta-E runs 0 to 100 over the lightness axis, and is symmetric.
+    assert views.colour_distance("#000000", "#ffffff") == pytest.approx(100.0)
+    assert views.colour_distance("#3a7a8c", "#3a7a8c") == pytest.approx(0.0)
+    assert views.colour_distance("#0f7034", "#bc2626") == pytest.approx(
+        views.colour_distance("#bc2626", "#0f7034")
+    )
+    # A nudge of one step per channel is below the threshold anybody can
+    # see (the textbook figure is about 2.3), which is the property that
+    # makes this a better test of "could these be confused?" than
+    # comparing hex strings: two colours can differ and still be the
+    # same colour to look at.
+    assert views.colour_distance("#3a7a8c", "#3b7b8d") < 2.3
+
+    # And it orders the palette the way an eye does: the teal accent is
+    # further from the no-change blue than from the better-green, which
+    # is why the blue was the colour that had to move.
+    assert views.colour_distance("#3a7a8c", "#2048cc") > views.colour_distance(
+        "#3a7a8c", "#0f7034"
+    )
+
+
+def test_the_page_draws_itself_in_one_palette_at_a_time(results):
+    """The mode is read once per view and passed down, so the cards, the
+    scope tints and the kind labels cannot disagree about which palette
+    the page is in.
+
+    AppTest reports no theme type, so this is the light palette - the
+    same fallback a real first page view gets before the browser has told
+    Streamlit anything. What is being checked is that one palette's
+    colours reach the page and the other's do not.
+    """
+    import app.dashboard as dashboard
+
+    app = app_test().run()
+    assert not app.exception
+    assert dashboard.active_mode() == views.LIGHT_MODE
+
+    markup = " ".join(str(block.value) for block in app.markdown)
+    light = [
+        views.shade(views.SAME_COLOURS, views.LIGHT_MODE),
+        views.region_tint("north", views.LIGHT_MODE),
+    ]
+    assert any(colour in markup for colour in light), "no light colours drawn"
+
+    # Not one dark shade anywhere on a light page.
+    for pair in (views.BETTER_COLOURS, views.WORSE_COLOURS, views.SAME_COLOURS,
+                 *views.KIND_COLOURS.values(), *views.REGION_TINTS.values()):
+        stray = pair[views.DARK_MODE]
+        assert stray not in markup, f"{stray} is a dark shade on a light page"
+
+
+def test_nothing_coloured_is_drawn_without_being_told_the_mode():
+    """Read off the page's own source, which is the only way to catch a
+    call site that quietly took the default.
+
+    Every one of these takes a mode and falls back to light, so a missed
+    argument is not an error - it is a card that stays dark green on a
+    dark page while the rest of the page follows the reader. That is
+    exactly the kind of failure a test has to find, because nothing
+    raises.
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
+    ).read_text(encoding="utf-8")
+
+    # Each of these is coloured, so each call in the page must hand it a
+    # mode - either positionally or by keyword.
+    for call in (
+        "views.card_html(",
+        "views.plan_styler(",
+        "views.comparison_styler(",
+        "views.region_key_rows(",
+        "views.kind_key_rows(",
+    ):
+        found = re.findall(re.escape(call) + r"([^)]*)\)", source, re.S)
+        assert found, f"{call} is not called by the page at all"
+        for arguments in found:
+            assert "mode" in arguments, f"{call}{arguments}) has no mode"
+
+
+def test_the_sidebar_says_where_light_and_dark_are_changed(results):
+    """Streamlit 1.67 has no API for setting the theme from page code -
+    st.context.theme is read-only - so the app points at Streamlit's own
+    switch instead of faking one. The switch is easy to miss, and it only
+    exists because this app ships two palettes.
+    """
+    app = app_test().run()
+    assert not app.exception
+    captions = [str(caption.value) for caption in app.sidebar.caption]
+    note = [
+        caption for caption in captions
+        if "Light or dark" in caption
+    ]
+    assert note, f"no light/dark note in the sidebar: {captions}"
+    assert len(note) == 1, note
+    # It has to say WHERE, and that the default follows the machine.
+    assert "top right" in note[0]
+    assert "System" in note[0]
+    # One line, as asked.
+    assert "\n" not in note[0]
+
+
+@pytest.fixture
+def in_dark_mode(monkeypatch):
+    """Make the real page believe the reader is in dark mode.
+
+    Patched at Streamlit's own context - the one thing the app asks -
+    rather than at views.resolve_mode or dashboard.active_mode. That
+    matters: forcing resolve_mode to answer "dark" would paint the whole
+    page dark whether or not the mode was ever passed down, and the test
+    below would pass on a page that had no plumbing at all. Patching the
+    context leaves every default in place, so a call site that forgot its
+    mode argument still comes out light, and is caught.
+    """
+    from streamlit.runtime.context import ContextProxy, StreamlitTheme
+
+    monkeypatch.setattr(
+        ContextProxy,
+        "theme",
+        property(lambda self: StreamlitTheme({"type": views.DARK_MODE})),
+        raising=True,
+    )
+    return views.DARK_MODE
+
+
+def test_a_dark_mode_reader_gets_the_dark_shades_everywhere(
+    results, in_dark_mode
+):
+    """The end of the chain, on the real page: ONE palette reaches it.
+
+    Every custom colour is drawn by this app rather than by Streamlit, so
+    a card, a scope tint or a kind label that missed the mode would come
+    out in the light shade on a charcoal page - unreadable, and nothing
+    would raise. This renders both coloured views in dark mode and checks
+    that every dark shade is there and not one light shade is.
+    """
+    def drawn(app):
+        markup = " ".join(str(block.value) for block in app.markdown)
+        proto = " ".join(
+            str(frame.proto.arrow_data.styler.styles) for frame in app.dataframe
+        )
+        return markup + " " + proto
+
+    page = ""
+    # Three runs, chosen because between them they draw all three card
+    # colours: the baseline draws none at all (nothing to compare
+    # against), so a dark-mode card colour would never appear on the
+    # view a visitor lands on. Centralized phones saves people (green),
+    # Volume +15% costs them (red), and the wider lunch window moves the
+    # FTE by four thousandths, which rounds away (blue).
+    for key in ("central_phones", "volume_plus_15", "wider_lunch_window"):
+        app = app_test().run()
+        run_picker(app).set_value(key).run()
+        assert not app.exception, key
+        page += " " + drawn(app)
+
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    assert not app.exception
+    page += " " + drawn(app)
+
+    pairs = {
+        "better card": views.BETTER_COLOURS,
+        "worse card": views.WORSE_COLOURS,
+        "no-change card": views.SAME_COLOURS,
+        **{f"{kind} kind": pair for kind, pair in views.KIND_COLOURS.items()},
+        **{f"{region} tint": pair for region, pair in views.REGION_TINTS.items()},
+    }
+    missing = [
+        name for name, pair in pairs.items()
+        if pair[views.DARK_MODE] not in page
+    ]
+    assert not missing, f"dark shade never drawn: {missing}"
+
+    stray = [
+        f"{name} {pair[views.LIGHT_MODE]}" for name, pair in pairs.items()
+        if pair[views.LIGHT_MODE] in page
+    ]
+    assert not stray, f"light shade on a dark page: {stray}"
+
+
+def test_a_filtered_view_is_tinted_by_label_not_by_position(
+    results, dimensions
+):
+    """The bug this guards against, which a full-table test cannot see.
+
+    Filtering by role or scope hands plan_styler a view whose index is
+    whatever survived the filter - 418, 419, 423 - not 0, 1, 2. Zipping
+    tints to positions while pandas hands back labels would tint every
+    row with some other row's colour, and on the full table the two
+    happen to agree, so it would look perfect until somebody used a
+    filter.
+    """
+    view = views.plan_view(results["scenarios"]["baseline"]["plan"])
+    sliced = view.iloc[10:30]
+    assert list(sliced.index) != list(range(len(sliced))), (
+        "this test needs a view whose labels are not its positions"
+    )
+
+    rendered = views.plan_styler(sliced, dimensions).to_html()
+    headers = list(views.plan_display(sliced).columns)
+    scope_at = headers.index(views.SCOPE_HEADER)
+
+    painted = {}
+    for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", rendered):
+        found = re.search(r"background-color:\s*(#[0-9a-f]{6})", body)
+        if not found:
+            continue
+        for row, column in re.findall(r"_row(\d+)_col(\d+)", selectors):
+            painted[(int(row), int(column))] = found.group(1)
+
+    # pandas numbers its rendered rows 0..n by POSITION, so each one is
+    # checked against the scope at that same position in the view.
+    scopes = list(sliced[views.SCOPE_HEADER])
+    assert len(painted) == len(scopes)
+    for at, scope in enumerate(scopes):
+        region = views.region_of(scope, dimensions)
+        assert painted[(at, scope_at)] == views.region_tint(region), (
+            f"row {at} ({scope}) wears another row's tint"
+        )
