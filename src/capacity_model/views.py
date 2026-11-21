@@ -549,7 +549,7 @@ RENDERED_COLOURS = {
     "blue":   {LIGHT_MODE: "#244fb4", DARK_MODE: "#85b8f8"},  # 6.9 / 8.4
     "violet": {LIGHT_MODE: "#382456", DARK_MODE: "#e4d0f5"},  # 12.6 / 12.0
     "orange": {LIGHT_MODE: "#422405", DARK_MODE: "#f2cda6"},  # 13.2 / 11.6
-    "gray":   {LIGHT_MODE: "#343432", DARK_MODE: "#dadde1"},  # 11.7 / 12.7
+    "gray":   {LIGHT_MODE: "#343432", DARK_MODE: "#bad8d9"},  # 11.7 / 11.4
 }
 
 
@@ -887,11 +887,12 @@ def comparison_display(table):
 #
 # Gray for a sensitivity is not an accident either: a sensitivity is not
 # a proposal, and a muted colour says so before the sentence does. The
-# price of that is measured and worth knowing: gray is the one kind whose
-# derived text shade sits close to the body text (delta-E 8.2 in light,
-# 7.3 in dark), so in the sidebar a sensitivity reads as muted rather
-# than as a colour. The wash in the table and the key is what carries it
-# there, and the word itself always says which kind it is.
+# price of that is measured and worth knowing: gray is the kind whose
+# derived text shade sits closest to the body text - delta-E 8.2 in
+# light, and 7.3 in dark until the 11/20 re-hue moved it to 14.7 - so in
+# the sidebar a sensitivity reads as muted rather than as a colour. The
+# wash in the table and the key is what carries it there, and the word
+# itself always says which kind it is.
 # ---------------------------------------------------------------------------
 
 KIND_COLOURS = {
@@ -905,8 +906,13 @@ KIND_COLOURS = {
     },
     scenarios.KIND_SENSITIVITY: {
         LIGHT_MODE: "#5c5b58",   # gray,   6.4:1 - a WARM gray on a cream
-        DARK_MODE: "#afb6bf",    #         8.4:1   page, which also pulls it
+        DARK_MODE: "#88bdbe",    #         8.3:1   page, which also pulls it
     },                           #                 clear of the teal accent
+    #                              The dark one is a COOL SLATE instead, and
+    #                              re-hued on 11/20: see the theme file. A
+    #                              gray in the violet's own hue neighbourhood
+    #                              came out of Streamlit's derivation as a
+    #                              second pale violet.
 }
 
 # The same three as Streamlit markdown colour names, for the places that
@@ -2016,10 +2022,10 @@ def colour_distance(one, other):
 # DISTINCT (40) is "could not be confused, even from memory". It applies
 # where a colour is the ONLY thing carrying the difference and the things
 # it separates are the same kind of object in the same place: the three
-# card verdicts against each other, the three kinds against each other,
-# and every card verdict against the teal accent - Siri's own rule, since
-# an accent-coloured control that read as "no change" would be a lie
-# about a number. 40 is well past the textbook "clearly different" mark.
+# card verdicts against each other, and every card verdict against the
+# teal accent - Siri's own rule, since an accent-coloured control that
+# read as "no change" would be a lie about a number. 40 is well past the
+# textbook "clearly different" mark.
 #
 # DIFFERENT (20) is "obviously another colour". It applies where the
 # colour is a second signal rather than the only one, or where the two
@@ -2030,6 +2036,17 @@ def colour_distance(one, other):
 # to 40 would be over-specification, and it is unreachable besides: the
 # sensitivity gray is a NEUTRAL, and a neutral cannot be 40 from a
 # mid-chroma teal at any lightness that keeps them both readable.
+#
+# THE THREE KINDS AGAINST EACH OTHER MOVED TO THIS BAR (Siri, 11/20).
+# They were held to 40 while they were measured as the hexes this project
+# declares, which passed. Measuring what Streamlit actually paints showed
+# the real figures to be 36.0 and 25.8 in light and 19.3 and 27.9 in
+# dark - so the 40 the code claimed had never been true of the page, in
+# either palette. Siri's call was that 20 is the honest bar for them,
+# because a kind is never colour alone: every kind label on this page is
+# printed as its own word next to its own colour, in the sidebar, in the
+# Kind column and in the key. The gray was then re-hued so the worst pair
+# clears 20 with margin rather than scraping it (19.3 -> 26.2).
 DISTINCT = 40.0
 DIFFERENT = 20.0
 

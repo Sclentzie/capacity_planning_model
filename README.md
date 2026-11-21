@@ -258,10 +258,26 @@ configured hex for a colour name, it derives a more contrasty one from it. Our
 `views.RENDERED_COLOURS`, measured in a real browser, and
 `tests/test_live_colours.py` drives the actual Light/Dark menu with no refresh
 and re-measures them. On contrast the derivation is an improvement — the worst
-of the six is 6.7:1 where the worst hand-picked hex was 5.6:1 — but it leaves
-three of them closer together than this project's own rules allow, Choice and
-Sensitivity worst at 19.3 apart in dark mode. That gap is recorded as a
-deliberately failing test rather than written off, and it is open. The tints
+of the six is 6.7:1 where the worst hand-picked hex was 5.6:1 — but measuring
+what is painted rather than what is declared also found six pairs closer
+together than this project's own rules allowed, which the declared hexes had
+been hiding.
+
+Four of those were one kind against another, and they were settled two ways.
+A kind is never colour alone — every kind label is printed as its own word
+beside its own colour — so those pairs answer to the "obviously another
+colour" bar (20) rather than the "could not be confused" bar (40). Three
+cleared it already. The fourth did not: Streamlit painted Choice `#e4d0f5`
+and Sensitivity `#dadde1`, 19.3 apart, which in a sidebar that writes them one
+above the other is one pale colour. The cause was hue. Streamlit's derivation
+preserves a configured colour's hue exactly and flattens everything else, and
+the gray's hue sat 49 degrees from the violet's. Re-hueing the dark gray from
+a cool `#afb6bf` to a slate `#88bdbe` moved the pair to 26.2 — measured in a
+browser, after trying a warm gray that cleared the violet and then collided
+with the orange instead. The two pairs still open are a card verdict against
+the teal accent, which stays on the strict bar because the accent is the one
+thing here wearing a colour and no word; both are recorded as deliberately
+failing tests rather than written off. The tints
 are a thing done to the screen; the CSV is the same bytes it always was.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
@@ -319,7 +335,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 838 tests, about 85 minutes
+# The validation checks: 840 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -359,7 +375,8 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-838 tests across 24 files, all passing. Every validation check in the
+840 tests across 24 files: 838 passing, and 2 that fail on purpose and are
+described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
 A 25th file, `tests/test_live_colours.py`, holds 7 more that drive a real

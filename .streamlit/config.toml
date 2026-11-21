@@ -43,7 +43,7 @@
 #   white label on the teal button        4.84 : 1     4.68 : 1
 #   teal edge on the page                 4.53 : 1     3.69 : 1
 #   violet / orange / gray kind labels    8.09, 6.36, 6.35
-#                                                      6.81, 8.39, 8.44
+#                                                      6.81, 8.39, 8.27
 #
 # The three kind colours in each section are the same hexes
 # views.KIND_COLOURS holds, and a test fails if the two ever disagree.
@@ -119,10 +119,35 @@ textColor = "#edeae4"
 # is no colour at all), so each one is a pastel of the same hue.
 violetColor = "#be8fe8"
 orangeColor = "#e8a862"
-grayColor = "#afb6bf"
+
+# RE-HUED 11/20, and the measurement that forced it. Streamlit does not
+# use the hex written here - it DERIVES the text shade it paints from it,
+# and the derivation keeps the HUE (within about two degrees, measured)
+# while cutting the chroma to about half and pushing every one of these
+# into a narrow lightness band near the top of the page's range. So on a
+# dark page the only lever a colour here really has over the shade a
+# reader sees is its hue.
+#
+# The gray's old hue was the problem. #afb6bf is a COOL gray, hue 263
+# degrees, and the violet beside it is hue 312 - only 49 degrees away. At
+# the pale lightness the derivation forces, two hues that close are two
+# versions of one colour: Choice came out #e4d0f5 and Sensitivity
+# #dadde1, 19.3 apart by delta-E, one above the other in the sidebar.
+#
+# Turning the gray WARM, the way the light palette's is, does separate it
+# from the violet (25.2) but spends the gain on the orange, which drops
+# to 20.2 - exactly on the bar, which is no margin at all. Hue 200 is the
+# one direction that moves away from BOTH: a cool slate rather than a
+# blue-gray, the violet now 26.2 and the orange 32.9. Measured in a
+# browser, not chosen by eye - the candidates are in the commit.
+#
+# It is still a gray. The derivation leaves this at chroma 10, where the
+# violet beside it sits at 21 and a vivid colour runs past 100 - on
+# screen, a slate that happens not to be blue.
+grayColor = "#88bdbe"
 
 [theme.dark.sidebar]
 backgroundColor = "#232629"
 violetColor = "#be8fe8"
 orangeColor = "#e8a862"
-grayColor = "#afb6bf"
+grayColor = "#88bdbe"

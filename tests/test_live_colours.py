@@ -32,7 +32,12 @@ with no refresh - and every one of these matches views.RENDERED_COLOURS:
     no change (blue) #244fb4    #85b8f8
     Choice (violet)  #382456    #e4d0f5
     Risk (orange)    #422405    #f2cda6
-    Sensitivity      #343432    #dadde1
+    Sensitivity      #343432    #bad8d9
+
+The dark Sensitivity shade was #dadde1 until 11/20, when the theme file's
+dark grayColor was re-hued to pull Sensitivity off Choice: measured as
+painted, those two were 19.3 apart, which is one pale colour in a sidebar
+that writes them one above the other. These tests are what measured it.
 """
 import contextlib
 import socket

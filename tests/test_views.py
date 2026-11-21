@@ -1468,24 +1468,24 @@ def test_the_theme_passes_wcag_aa(results, mode):
 # palettes - see test_the_derived_shades_that_are_too_close below, which
 # is a strict xfail so the gap is recorded rather than argued away.
 #
-# Two of these arrived with 11/20, when the cards stopped choosing their
-# own shade. Four did not: the sidebar has written a kind as
-# ":violet[Choice]" since 11/19, so the three kinds have been this close
-# on screen since then. The old test passed only because it measured the
-# hexes in the theme file rather than the shades Streamlit derives from
-# them, which is the difference 11/20's "measure what is rendered" is
-# there to catch.
+# THERE WERE SIX OF THESE ON 11/20, AND THERE ARE NOW TWO. Four were
+# kind-against-kind pairs, and they went two different ways:
+#   - Siri moved the three kinds to the DIFFERENT bar, because a kind is
+#     never colour alone - every kind label is printed as its own word
+#     beside its own colour. Three of the four cleared 20 already.
+#   - The fourth did not, and was the worst of the six: dark Choice
+#     #e4d0f5 against dark Sensitivity #dadde1, 19.3 apart, one above the
+#     other in the sidebar. So the gray was re-hued (see the theme file)
+#     and that pair is now 26.2. It is pinned by a test that passes -
+#     test_the_kinds_clear_the_bar_a_labelled_colour_answers_to.
 #
-# Siri decides whether to steer them or accept them. They are steerable:
-# Streamlit takes greenColor, blueColor, violetColor, orangeColor and
-# grayColor in config.toml, so the hues are ours to move - but it derives
-# its own shade from whatever it is given, so landing on a target means
-# setting a hex, measuring what comes out, and going again.
+# What is left is a card verdict against the teal accent, in one palette
+# each. Those stay on the strict bar, because that is the one pairing
+# where colour IS the only signal: the accent is a control's fill and it
+# carries no word at all, so a slider that read as "no change" would be
+# a lie about a number with nothing to correct it. Unreachable so far by
+# moving only the kinds, and not Siri's to trade away cheaply.
 TOO_CLOSE = {
-    ("light", "choice", "sensitivity"),
-    ("dark", "choice", "sensitivity"),
-    ("light", "risk", "sensitivity"),
-    ("dark", "risk", "sensitivity"),
     ("light", "better", "accent"),
     ("dark", "no change", "accent"),
 }
@@ -1581,7 +1581,10 @@ def test_no_colour_on_the_page_means_two_things(results, mode):
             apart(one, other, views.DISTINCT, "the three verdicts")
     for at, one in enumerate(kind_names):
         for other in kind_names[at + 1:]:
-            apart(one, other, views.DISTINCT, "the three kinds")
+            # DIFFERENT, not DISTINCT (Siri, 11/20): see the bars in
+            # views.py. A kind always carries its own word, so colour is
+            # its second signal and not its only one.
+            apart(one, other, views.DIFFERENT, "the three kinds")
     for one in card_names:
         apart(one, "accent", views.DISTINCT, "a verdict against the accent")
 
@@ -1601,8 +1604,8 @@ def test_no_colour_on_the_page_means_two_things(results, mode):
 @pytest.mark.parametrize("mode", views.MODES)
 @pytest.mark.xfail(
     strict=True,
-    reason="Streamlit derives shades closer than DISTINCT in six pairs; "
-           "pending Siri's decision on steering the theme hexes",
+    reason="a card verdict against the teal accent is under DISTINCT in "
+           "one palette each; open, and not to be traded away cheaply",
 )
 def test_the_derived_shades_that_are_too_close(mode):
     """The gap, written down as a failing test rather than as a comment.
@@ -1610,15 +1613,17 @@ def test_the_derived_shades_that_are_too_close(mode):
     STRICT XFAIL ON PURPOSE. Every pair below is one this project's own
     rules say a reader must be able to tell apart, and cannot. Prose
     rots; a test that is expected to fail does not, and the day somebody
-    steers the theme hexes and fixes it, pytest reports an unexpected
-    pass and this marker comes off.
+    moves the accent or the card hues and fixes it, pytest reports an
+    unexpected pass and this marker comes off.
 
-    The worst of them: in dark mode Streamlit paints violet #e4d0f5 and
-    gray #dadde1, 19.3 apart. Those are Choice and Sensitivity, one above
-    the other in the sidebar, and at that distance they are one pale
-    colour. That pair has been on screen since 11/19 and no test caught
-    it, because every test measured the hex we declare rather than the
-    shade Streamlit paints.
+    WHAT IS LEFT, AND WHAT WENT. This started 11/20 with six pairs, four
+    of them kind-against-kind. Those were the ones a reader could at
+    least read their way out of, since a kind is printed as its own word,
+    and Siri moved them to the DIFFERENT bar and had the gray re-hued to
+    clear it - see TOO_CLOSE above. The two that remain are the better
+    green against the light accent (29.8) and the no-change blue against
+    the dark accent (32.8), and they stay strict because the accent is
+    the one thing on this page that wears a colour and no word.
     """
     shades = painted_shades(mode)
     checked = 0
@@ -1632,6 +1637,73 @@ def test_the_derived_shades_that_are_too_close(mode):
             f"are only {distance:.1f} apart (needs {views.DISTINCT})"
         )
     assert checked, f"no recorded pair for {mode}"
+
+
+# What a browser measured between the three kinds, as Streamlit paints
+# them, after the 11/20 re-hue of the dark gray. Recorded rather than
+# merely bounded: a pair that only has to beat 20 can rot to 20.1 without
+# a test noticing, and the dark Choice/Sensitivity pair is the one this
+# project has already had to fix once.
+KIND_DISTANCES = {
+    "light": {
+        ("choice", "risk"): 51.8,
+        ("choice", "sensitivity"): 36.0,
+        ("risk", "sensitivity"): 25.8,
+    },
+    "dark": {
+        ("choice", "risk"): 40.4,
+        ("choice", "sensitivity"): 26.2,   # was 19.3 before the re-hue
+        ("risk", "sensitivity"): 32.9,     # was 27.9
+    },
+}
+
+
+@pytest.mark.parametrize("mode", views.MODES)
+def test_the_kinds_clear_the_bar_a_labelled_colour_answers_to(mode):
+    """The three kinds, at the bar Siri set for them on 11/20.
+
+    THE FIX, PINNED. Four kind pairs used to sit in TOO_CLOSE above and
+    fail on purpose. They are here instead now, and they pass - which is
+    only worth something if they pass for the right reason, so this
+    checks both halves of that reason:
+
+      - the bar is DIFFERENT (20) and not DISTINCT (40), because every
+        kind label on this page is printed as its own word beside its own
+        colour. That is Siri's call, and views.py carries the argument.
+      - the DISTANCES ARE THE MEASURED ONES. The worst pair was 19.3 -
+        dark Choice #e4d0f5 against dark Sensitivity #dadde1, which at
+        that distance was one pale colour in the sidebar - and the dark
+        grayColor was re-hued from a cool #afb6bf to a slate #88bdbe to
+        move it. Asserting only "beats 20" would let that work be undone
+        by a hex that scrapes 20.1, and would have let the original 19.3
+        pass the day somebody lowered the bar instead of fixing it.
+    """
+    shades = painted_shades(mode)
+    for (one, other), expected in sorted(KIND_DISTANCES[mode].items()):
+        distance = views.colour_distance(shades[one], shades[other])
+        assert distance >= views.DIFFERENT, (
+            f"{mode}: {one} {shades[one]} and {other} {shades[other]} "
+            f"are only {distance:.1f} apart (needs {views.DIFFERENT})"
+        )
+        # And still the distance a browser measured. A drift either way
+        # means the theme file moved and nobody re-measured.
+        assert abs(distance - expected) < 1.0, (
+            f"{mode}: {one} to {other} measures {distance:.1f}, and "
+            f"KIND_DISTANCES records {expected} - re-measure in a "
+            "browser, do not edit the number"
+        )
+
+    # Margin, not a coin toss, on the pair that had to be fixed. Siri
+    # chose hue 200 over a warm gray precisely because the warm one
+    # cleared the violet at 25.2 but fell to 20.2 against the orange.
+    worst = min(
+        views.colour_distance(shades[one], shades[other])
+        for one, other in KIND_DISTANCES[mode]
+    )
+    assert worst >= views.DIFFERENT + 5, (
+        f"{mode}: the closest two kinds are {worst:.1f} apart, which "
+        f"clears {views.DIFFERENT} with nothing to spare"
+    )
 
 
 @pytest.mark.parametrize("mode", views.MODES)
