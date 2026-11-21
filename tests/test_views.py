@@ -1402,11 +1402,15 @@ def test_the_theme_passes_wcag_aa(results, mode):
     # And its own edge against the page, which is a graphic, not text.
     assert views.contrast_ratio(primary, page) >= views.AA_LARGE
 
-    # The mode's own body text on each scope tint - which is why the dark
-    # tints are dark and the light ones pale, rather than one set of
-    # three used twice.
+    # The mode's own body text on each scope tint. A tint is a translucent
+    # wash now (11/20), so it has no colour of its own until the browser
+    # puts it over the page: composite it first and measure what a reader
+    # actually meets. ONE set of three washes serves both modes, and this
+    # is the check that says both results are readable.
     for region in views.REGION_TINTS:
-        tint = views.region_tint(region, mode)
+        wash = views.region_tint(region)
+        assert views.is_wash(wash), (region, wash)
+        tint = views.composite_over(wash, page)
         assert views.contrast_ratio(text, tint) >= views.AA_TEXT, (region, tint)
 
     # Every kind label, on both backgrounds it is written on.
@@ -1433,9 +1437,14 @@ def test_no_colour_on_the_page_means_two_things(results, mode):
             ("no change", views.SAME_COLOURS),
         )
     }
+    page = views.page_colour(mode)
     kinds = {kind: views.kind_colour(kind, mode) for kind in views.KIND_COLOURS}
+    # Composited over this mode's page, because that is the colour on
+    # screen - the wash string itself is the same in both modes and would
+    # answer this question once instead of twice.
     regions = {
-        region: views.region_tint(region, mode) for region in views.REGION_TINTS
+        region: views.composite_over(views.region_tint(region), page)
+        for region in views.REGION_TINTS
     }
     accent = views.accent_colour(mode)
 
@@ -1600,15 +1609,13 @@ def test_every_run_s_kind_is_a_kind_with_a_colour(results):
 def test_every_scope_in_every_run_has_a_region_and_a_tint(results, dimensions):
     """Walked over every saved run's plan, so a scope the model produces
     and this does not know about shows up here rather than as an
-    untinted cell on the page. Both palettes, because a region added
-    with only a light shade would be a blank cell in dark mode.
+    untinted cell on the page.
     """
     for key, run in results["scenarios"].items():
         for scope in set(run["plan"]["scope"]):
             region = views.region_of(scope, dimensions)
             assert region is not None, f"{key}: no region for {scope!r}"
-            for mode in views.MODES:
-                assert views.region_tint(region, mode), f"{scope}: no {mode} tint"
+            assert views.region_tint(region), f"{scope}: no tint"
 
 
 def test_the_region_is_read_from_the_clusters_not_from_the_code(dimensions):
@@ -1638,35 +1645,122 @@ def test_the_back_office_is_its_own_region(dimensions):
         assert role["short_name"] in network["meaning"]
 
 
-@pytest.mark.parametrize("mode", views.MODES)
-def test_the_plan_styler_tints_each_scope_by_its_region(
-    results, dimensions, mode
-):
-    """Row by row, against the scope in that row, in each palette."""
+def test_the_plan_styler_tints_each_scope_by_its_region(results, dimensions):
+    """Row by row, against the scope in that row.
+
+    Not parametrised over the modes any more, and that is the point of
+    11/20 rather than a gap in the test: there is one wash per region and
+    the browser composites it against whichever page it is painting, so
+    there is no second answer to check.
+    """
     plan = results["scenarios"]["baseline"]["plan"]
     view = views.plan_view(plan)
-    tints = views.scope_tints(view, dimensions, mode)
+    tints = views.scope_tints(view, dimensions)
     assert len(tints) == len(view)
     for scope, tint in zip(view[views.SCOPE_HEADER], tints):
         region = views.region_of(scope, dimensions)
-        assert tint == views.region_tint(region, mode), scope
+        assert tint == views.region_tint(region), scope
     # All three tints really are in use on a network-wide view.
     assert set(tints) == {
-        views.region_tint(region, mode) for region in views.REGION_TINTS
+        views.region_tint(region) for region in views.REGION_TINTS
     }
 
-    styler = views.plan_styler(view, dimensions, mode=mode)
-    rendered = styler.to_html()
+    rendered = views.plan_styler(view, dimensions).to_html()
     for region in views.REGION_TINTS:
-        tint = views.region_tint(region, mode)
-        assert f"background-color: {tint}" in rendered, (mode, region)
+        tint = views.region_tint(region)
+        assert f"background-color: {tint}" in rendered, region
 
-    # And the OTHER palette's tints are nowhere in it: one render is one
-    # palette, not a hedge between them.
-    other = views.DARK_MODE if mode == views.LIGHT_MODE else views.LIGHT_MODE
-    for region in views.REGION_TINTS:
-        stray = views.region_tint(region, other)
-        assert f"background-color: {stray}" not in rendered, (other, region)
+    # No hex tint anywhere in it. This is the regression guard: the bug
+    # on 11/20 was a solid per-mode hex baked into the page, which stayed
+    # on screen after the reader switched because the script never reran.
+    assert not re.search(
+        r"background-color:\s*#", rendered
+    ), "a solid tint is back in the Scope column"
+
+
+# How far apart the three SOLID tints were, measured the same way, in the
+# worse of the two modes: dark north/network, 10.4 by CIE delta-E. Siri
+# approved those on 11/19 by eye, so they are the fair bar for the washes
+# that replace them - "no harder to tell apart than what you signed off".
+TINTS_REPLACED_APART = 10.4
+
+
+def test_the_scope_tint_has_no_mode_and_reads_in_both_modes(
+    results, dimensions
+):
+    """Siri 11/20, the fix itself: one wash per region, no mode anywhere.
+
+    The bug was not a wrong colour, it was a colour chosen at the wrong
+    TIME. Streamlit's Light/Dark menu re-themes the browser WITHOUT
+    rerunning the script, so a hex this module picked from the mode was
+    still on the page after the reader had switched away from it: a pale
+    sand under off-white text, at about 1.2:1, until something else
+    happened to cause a rerun. A wash cannot do that, because the browser
+    composites it against whatever the page background is on the repaint.
+
+    Four things, then. That no tint carries a mode and none can be given
+    one; that each is really translucent; that both composites clear AA
+    with that mode's own body text; and that three regions are still
+    told apart once the page has been mixed into them, which is the part
+    a low alpha could quietly cost.
+    """
+    import inspect
+
+    # 1. Not a mode in sight, on any of the four, and no way to pass one.
+    for function in (
+        views.region_tint, views.scope_tints,
+        views.region_key_rows, views.plan_styler,
+    ):
+        assert "mode" not in inspect.signature(function).parameters, (
+            f"{function.__name__} takes a mode again"
+        )
+    with pytest.raises(TypeError):
+        views.region_tint("north", views.DARK_MODE)
+
+    # 2. Translucent, and one string for both palettes.
+    for region, wash in views.REGION_TINTS.items():
+        assert views.is_wash(wash), f"{region} is not translucent: {wash}"
+        assert views.region_tint(region) == wash
+    assert len(set(views.REGION_TINTS.values())) == len(views.REGION_TINTS)
+
+    # 3. Readable over BOTH page backgrounds. The text colour is
+    # Streamlit's to paint, because nothing here sets one - which is the
+    # other half of the fix, checked below.
+    for mode in views.MODES:
+        page, text = views.page_colour(mode), views.text_colour(mode)
+        for region in views.REGION_TINTS:
+            over = views.composite_over(views.region_tint(region), page)
+            ratio = views.contrast_ratio(text, over)
+            assert ratio >= views.AA_TEXT, (
+                f"{mode} {region}: {over} under {text} is only {ratio:.2f}:1"
+            )
+
+    # 4. And still three distinguishable regions, composited, in both.
+    for mode in views.MODES:
+        page = views.page_colour(mode)
+        over = {
+            region: views.composite_over(views.region_tint(region), page)
+            for region in views.REGION_TINTS
+        }
+        names = sorted(over)
+        for at, one in enumerate(names):
+            for other in names[at + 1:]:
+                apart = views.colour_distance(over[one], over[other])
+                assert apart >= TINTS_REPLACED_APART, (
+                    f"{mode}: {one} {over[one]} and {other} {over[other]} "
+                    f"are only {apart:.1f} apart (the solid tints managed "
+                    f"{TINTS_REPLACED_APART})"
+                )
+
+    # 5. NO TEXT COLOUR in the Scope column. Setting one would put the
+    # same bug back a layer up: the wash would follow the reader and the
+    # words sitting on it would not.
+    view = views.plan_view(results["scenarios"]["baseline"]["plan"]).head(40)
+    painted = views.plan_styler(view, dimensions).to_html()
+    assert "background-color" in painted
+    assert not re.search(r"(?<!background-)color:", painted), (
+        "the Scope column sets a text colour, which cannot follow a switch"
+    )
 
 
 def test_the_tint_lands_on_the_scope_cell_and_nowhere_else(
@@ -1727,15 +1821,12 @@ def test_the_tints_leave_the_figures_and_the_download_alone(
     plain = views.plan_display(view)
     text = views.csv_bytes(view).decode("utf-8")
 
-    for mode in views.MODES:
-        styled = views.plan_styler(view, dimensions, mode=mode)
-        assert styled.data.equals(plain), mode
+    assert views.plan_styler(view, dimensions).data.equals(plain)
 
     assert views.csv_bytes(view) == views.csv_bytes(view)
     assert "background-color" not in text
     for region in views.REGION_TINTS:
-        for mode in views.MODES:
-            assert views.region_tint(region, mode) not in text
+        assert views.region_tint(region) not in text
 
 
 # ---------------------------------------------------------------------------
@@ -1790,16 +1881,16 @@ def test_the_detail_table_keeps_its_formats_under_the_tints(results):
     pandas.Styler". Checked on the real page, because that rule is the
     whole reason the tints are safe to add.
 
-    Light shades, because AppTest reports no theme type and the app falls
-    back to light - which is the same default a first page view gets
-    before the browser has told Streamlit anything.
+    The washes go in as written: they are the same in either palette, so
+    unlike every other colour on the page there is no "which mode is this"
+    to get right here.
     """
     app = app_test().run()
     assert not app.exception
     proto = app.dataframe[0].proto
     assert proto.arrow_data.styler.styles, "no tints in the dataframe proto"
     for region in views.REGION_TINTS:
-        tint = views.region_tint(region, views.LIGHT_MODE)
+        tint = views.region_tint(region)
         assert tint in proto.arrow_data.styler.styles, (region, tint)
     # And the column settings are still there, money format and all.
     assert "$%,.0f" in proto.columns
@@ -1847,8 +1938,13 @@ def test_every_custom_colour_has_both_shades():
         "sidebar": views.SIDEBAR_COLOURS,
         "text": views.TEXT_COLOURS,
         **{f"{kind} kind": pair for kind, pair in views.KIND_COLOURS.items()},
-        **{f"{region} tint": pair for region, pair in views.REGION_TINTS.items()},
     }
+    # The scope tints are deliberately NOT in that list any more (11/20).
+    # They are washes with no mode at all, and the test that they stay
+    # that way is test_the_scope_tint_has_no_mode_and_reads_in_both_modes.
+    assert not any(
+        isinstance(tint, dict) for tint in views.REGION_TINTS.values()
+    ), "a scope tint has grown a per-mode pair again"
     for name, pair in pairs.items():
         assert set(pair) == set(views.MODES), f"{name}: {sorted(pair)}"
         for mode in views.MODES:
@@ -1908,47 +2004,68 @@ def test_the_page_draws_itself_in_one_palette_at_a_time(results):
     assert not app.exception
     assert dashboard.active_mode() == views.LIGHT_MODE
 
+    # Driven to a run that actually draws a card colour. The landing view
+    # is the baseline, which has nothing to compare against and so draws
+    # none at all - the wider lunch window moves the FTE by four
+    # thousandths, which rounds away, so it draws the no-change blue.
+    run_picker(app).set_value("wider_lunch_window").run()
+    assert not app.exception
+
     markup = " ".join(str(block.value) for block in app.markdown)
-    light = [
-        views.shade(views.SAME_COLOURS, views.LIGHT_MODE),
-        views.region_tint("north", views.LIGHT_MODE),
-    ]
-    assert any(colour in markup for colour in light), "no light colours drawn"
+    assert views.shade(views.SAME_COLOURS, views.LIGHT_MODE) in markup, (
+        "no light card colour drawn"
+    )
 
     # Not one dark shade anywhere on a light page.
     for pair in (views.BETTER_COLOURS, views.WORSE_COLOURS, views.SAME_COLOURS,
-                 *views.KIND_COLOURS.values(), *views.REGION_TINTS.values()):
+                 *views.KIND_COLOURS.values()):
         stray = pair[views.DARK_MODE]
         assert stray not in markup, f"{stray} is a dark shade on a light page"
+
+    # The region key is the exception, and on purpose: its swatches are
+    # washes, so the SAME string is drawn in either palette and the
+    # browser composites it. Nothing here is mode-specific to get wrong.
+    assert views.region_tint("north") in markup, "no region key drawn"
 
 
 def test_nothing_coloured_is_drawn_without_being_told_the_mode():
     """Read off the page's own source, which is the only way to catch a
     call site that quietly took the default.
 
-    Every one of these takes a mode and falls back to light, so a missed
-    argument is not an error - it is a card that stays dark green on a
-    dark page while the rest of the page follows the reader. That is
-    exactly the kind of failure a test has to find, because nothing
-    raises.
+    These three still pick a hex per mode, so each call in the page must
+    hand it one: a missed argument is not an error, it is a card that
+    stays dark green on a dark page while the rest of the page follows
+    the reader. Exactly the kind of failure a test has to find, because
+    nothing raises.
+
+    The Scope tint and the region key are on the other list on purpose
+    (11/20). They take no mode at all now, so passing one would be the
+    beginning of the stale-colour bug growing back, and this asks for its
+    absence as plainly as it asks for the others' presence.
     """
     source = (
         Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
     ).read_text(encoding="utf-8")
 
-    # Each of these is coloured, so each call in the page must hand it a
-    # mode - either positionally or by keyword.
-    for call in (
-        "views.card_html(",
-        "views.plan_styler(",
-        "views.comparison_styler(",
-        "views.region_key_rows(",
-        "views.kind_key_rows(",
-    ):
+    def arguments_of(call):
         found = re.findall(re.escape(call) + r"([^)]*)\)", source, re.S)
         assert found, f"{call} is not called by the page at all"
-        for arguments in found:
+        return found
+
+    for call in (
+        "views.card_html(",
+        "views.comparison_styler(",
+        "views.kind_key_rows(",
+    ):
+        for arguments in arguments_of(call):
             assert "mode" in arguments, f"{call}{arguments}) has no mode"
+
+    for call in ("views.plan_styler(", "views.region_key_rows("):
+        for arguments in arguments_of(call):
+            assert "mode" not in arguments, (
+                f"{call}{arguments}) takes a mode again - the Scope tint "
+                "must not depend on one"
+            )
 
 
 def test_the_sidebar_says_where_light_and_dark_are_changed(results):
@@ -2037,8 +2154,13 @@ def test_a_dark_mode_reader_gets_the_dark_shades_everywhere(
         "worse card": views.WORSE_COLOURS,
         "no-change card": views.SAME_COLOURS,
         **{f"{kind} kind": pair for kind, pair in views.KIND_COLOURS.items()},
-        **{f"{region} tint": pair for region, pair in views.REGION_TINTS.items()},
     }
+    # The scope tints are not in that list: they are washes, so the very
+    # same string is drawn to a dark reader as to a light one. Checked
+    # the other way round - present, and present UNCHANGED.
+    for region, wash in views.REGION_TINTS.items():
+        assert wash in page, f"{region} wash never drawn to a dark reader"
+
     missing = [
         name for name, pair in pairs.items()
         if pair[views.DARK_MODE] not in page
@@ -2076,11 +2198,14 @@ def test_a_filtered_view_is_tinted_by_label_not_by_position(
 
     painted = {}
     for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", rendered):
-        found = re.search(r"background-color:\s*(#[0-9a-f]{6})", body)
+        # The whole value, not a hex: the tints are rgba washes (11/20),
+        # and a hex-only pattern would quietly match nothing and leave
+        # this test asserting things about an empty dict.
+        found = re.search(r"background-color:\s*([^;]+)", body)
         if not found:
             continue
         for row, column in re.findall(r"_row(\d+)_col(\d+)", selectors):
-            painted[(int(row), int(column))] = found.group(1)
+            painted[(int(row), int(column))] = found.group(1).strip()
 
     # pandas numbers its rendered rows 0..n by POSITION, so each one is
     # checked against the scope at that same position in the view.

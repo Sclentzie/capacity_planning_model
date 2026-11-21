@@ -20,6 +20,7 @@ and typography are 7d.
 import functools
 import html
 import math
+import re
 
 import altair as alt
 import pandas as pd
@@ -1476,10 +1477,33 @@ def plan_column_specs():
 # verdict. These carry no meaning of their own beyond "same region", and
 # a test checks none of them is a card colour or the accent.
 #
-# ONE PAIR EACH. A pale sand that keeps charcoal text at 11.8:1 on a
-# cream page is invisible on a charcoal one, and off-white text on it
-# would be 1.2:1. So the dark shades are dark - the same three hues, deep
-# enough for the dark palette's off-white text to sit on them.
+# TRANSLUCENT, NOT ONE SHADE PER MODE (Siri, 11/20). The first build
+# picked a solid hex per mode at render time, and that turned out to be
+# broken in a way no test caught: switching Light/Dark in Streamlit's own
+# menu does NOT rerun the script. The browser re-themes itself live, the
+# Python that chose the hex never runs again, and the tint stays as it
+# was - a pale sand sitting on a charcoal page under off-white text, at
+# 1.2:1. Unreadable, in both directions, until something else happens to
+# rerun the script.
+#
+# A WASH HAS NO MODE TO GET WRONG. Each region is one rgba colour at 30%
+# over whatever the page background currently is, so the browser composites
+# it afresh on every repaint and the arithmetic lands on the right side
+# automatically: over cream it comes out a pale tint, over charcoal a deep
+# one. Nothing here has to know which mode is on screen, so nothing here
+# can be out of date. Measured, not assumed: a scratch browser test drove
+# the real menu and read the composited pixels back off the canvas.
+#
+# AND THE TEXT IS LEFT ALONE. No colour is set on the cell, so the figures
+# and the scope code keep the text colour Streamlit is painting with right
+# now, which it does update live. Setting a text colour here would put the
+# stale-colour bug straight back, one layer up.
+#
+# WHAT THE 30% BUYS. Composited, the three are further apart than the
+# solid tints this replaces (worst pair 18.5 against 10.4 by CIE delta-E,
+# in the worse of the two modes), and the body text clears AA on all six
+# backgrounds by at least 8.3:1 against the 4.5 it needs. A test
+# recomputes every one of those rather than trusting this paragraph.
 #
 # THE DOWNLOAD IS NOT TOUCHED. A tint is a thing done to a screen; the
 # CSV is the same bytes it was, which a test checks.
@@ -1487,19 +1511,19 @@ def plan_column_specs():
 
 NETWORK_REGION = "network"
 
+# How much of the wash sits over the page. Low enough that the page still
+# shows through and the figures stay the loudest thing in the row; high
+# enough that three regions are told apart at a glance in both modes.
+TINT_ALPHA = 0.30
+
 REGION_TINTS = {
-    "north": {
-        LIGHT_MODE: "#f0e2c8",       # warm sand
-        DARK_MODE: "#3a3228",        # the same sand, taken down
-    },
-    "south": {
-        LIGHT_MODE: "#e6def2",       # pale lilac
-        DARK_MODE: "#322c3e",        # deep lilac
-    },
-    NETWORK_REGION: {
-        LIGHT_MODE: "#e3e1dc",       # warm neutral gray
-        DARK_MODE: "#2c2e31",        # cool neutral gray
-    },
+    # Warm amber, for the North cluster.
+    "north": f"rgba(214, 150, 30, {TINT_ALPHA})",
+    # Violet, for the South cluster.
+    "south": f"rgba(142, 92, 214, {TINT_ALPHA})",
+    # Slate gray, for the back office - which is not a region at all, and
+    # a colour with no hue to speak of says that before the label does.
+    NETWORK_REGION: f"rgba(112, 128, 144, {TINT_ALPHA})",
 }
 
 # No tint at all for a scope no cluster claims, rather than a white box
@@ -1528,14 +1552,23 @@ def region_of(scope, dimensions=None):
     return None
 
 
-def region_tint(region, mode=None):
-    """The tint one region wears in the palette being drawn."""
-    pair = REGION_TINTS.get(region)
-    return shade(pair, mode) if pair else REGION_FALLBACK_TINT
+def region_tint(region):
+    """The wash one region wears - the same string in either palette.
+
+    No mode argument on purpose. This is the one colour on the page that
+    cannot go stale when a reader switches Light/Dark, and taking a mode
+    it would then ignore is how it would quietly grow one again.
+    """
+    return REGION_TINTS.get(region, REGION_FALLBACK_TINT)
 
 
-def region_key_rows(dimensions=None, mode=None):
-    """The region key: label, tint and what the tint covers."""
+def region_key_rows(dimensions=None):
+    """The region key: label, wash and what the wash covers.
+
+    The swatches are our own HTML, so the same rgba string the table
+    uses composites over the page there too, and the key re-tints itself
+    on a theme switch along with the column it explains.
+    """
     dimensions = dimensions if dimensions is not None else api.dimensions()
     rows = []
     for cluster in dimensions["clusters"]:
@@ -1543,7 +1576,7 @@ def region_key_rows(dimensions=None, mode=None):
             {
                 "region": cluster["code"],
                 "label": cluster["name"],
-                "colour": region_tint(cluster["code"], mode),
+                "colour": region_tint(cluster["code"]),
                 "meaning": ", ".join(cluster["sites"]),
             }
         )
@@ -1551,7 +1584,7 @@ def region_key_rows(dimensions=None, mode=None):
         {
             "region": NETWORK_REGION,
             "label": f"{dimensions['network_code']} (back office)",
-            "colour": region_tint(NETWORK_REGION, mode),
+            "colour": region_tint(NETWORK_REGION),
             "meaning": ", ".join(
                 role["short_name"] for role in network_roles(dimensions)
             ),
@@ -1560,7 +1593,7 @@ def region_key_rows(dimensions=None, mode=None):
     return rows
 
 
-def scope_tints(view, dimensions=None, mode=None):
+def scope_tints(view, dimensions=None):
     """One tint per row of the plan view, in the view's own order.
 
     One per ROW even though only the Scope cell wears it: the tint is a
@@ -1569,12 +1602,12 @@ def scope_tints(view, dimensions=None, mode=None):
     """
     dimensions = dimensions if dimensions is not None else api.dimensions()
     return [
-        region_tint(region_of(scope, dimensions), mode)
+        region_tint(region_of(scope, dimensions))
         for scope in view[SCOPE_HEADER]
     ]
 
 
-def plan_styler(view, dimensions=None, names=None, mode=None):
+def plan_styler(view, dimensions=None, names=None):
     """The plan view, rounded and named for a reader, Scope cell tinted.
 
     Streamlit takes the colours from a Styler and keeps its own
@@ -1590,7 +1623,7 @@ def plan_styler(view, dimensions=None, names=None, mode=None):
     # painter a column whose index is the frame's own labels, and a view
     # that arrived with anything but a 0..n index would otherwise be
     # tinted off by however much the labels differ.
-    tint_of = dict(zip(view.index, scope_tints(view, dimensions, mode)))
+    tint_of = dict(zip(view.index, scope_tints(view, dimensions)))
 
     def paint(column):
         return [
@@ -1612,7 +1645,10 @@ KEY_STYLE = """<style>
           font-size: 0.8125rem; line-height: 1.5; }
 .cm-key-item { display: flex; align-items: center; gap: 0.4rem; }
 .cm-swatch { width: 0.85rem; height: 0.85rem; border-radius: 0.2rem;
-             border: 1px solid rgba(0, 0, 0, 0.25); flex: none; }
+             /* A mid gray at 40%, which reads as an edge on the cream page
+                and on the charcoal one. The old pure-black edge vanished
+                into a dark page, and a swatch with no edge is a smudge. */
+             border: 1px solid rgba(128, 128, 128, 0.4); flex: none; }
 .cm-key-table { border-collapse: collapse; font-size: 0.8125rem; }
 .cm-key-table td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
 </style>"""
@@ -1685,6 +1721,57 @@ def contrast_ratio(one, other):
 
 AA_TEXT = 4.5
 AA_LARGE = 3.0
+
+
+# A translucent wash has no contrast ratio of its own - it only becomes a
+# colour once the browser has put it over something. These two do that
+# arithmetic in Python so the tests can hold a wash to AA the same way
+# they hold a solid colour to it, against each page background in turn.
+WASH = re.compile(
+    r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)"
+)
+
+
+def is_wash(colour):
+    """True for an "rgba(r, g, b, a)" string, False for anything else.
+
+    Anything else really does mean anything: a hex, None, or the per-mode
+    dict a tint used to be. A test asks this about every scope tint, and
+    it should be able to report "that is not translucent" rather than
+    raise on the shape of what it was handed.
+    """
+    return (
+        isinstance(colour, str)
+        and WASH.fullmatch(colour.strip()) is not None
+    )
+
+
+def composite_over(wash, background):
+    """The #rrggbb a translucent wash actually comes out as on a background.
+
+    Source-over alpha compositing, which is what the browser does when it
+    paints an rgba background over the page: result = a*wash + (1-a)*page.
+    A plain hex is returned unchanged, so a caller can mix the two.
+
+    Within one step per channel of what a browser really paints, not
+    always equal to it: a browser quantises the alpha to 8 bits first, so
+    its arithmetic is not quite this arithmetic. Checked rather than
+    assumed - the six tints were read back off the real canvas and five
+    came out identical to this, the sixth one step off in one channel.
+    That is nothing against the margin being measured: the tightest of
+    them clears AA at 8.3:1 where 4.5 is the bar.
+    """
+    found = WASH.fullmatch(wash.strip()) if wash else None
+    if found is None:
+        return wash
+    red, green, blue = (int(found.group(at)) for at in (1, 2, 3))
+    alpha = float(found.group(4))
+    base = _parts(background)
+    mixed = (
+        round(alpha * channel + (1 - alpha) * under)
+        for channel, under in zip((red, green, blue), base)
+    )
+    return "#%02x%02x%02x" % tuple(mixed)
 
 
 def _lab(colour):

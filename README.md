@@ -207,16 +207,31 @@ unasked. There is no on-page toggle because Streamlit 1.67 has no API for
 setting the theme from page code (`st.context.theme` is read-only), so the
 sidebar points at the real control instead of faking one.
 
-Every colour this model invented therefore comes in a pair, and the shade is
+The cards and the kind labels therefore come in a pair each, and the shade is
 chosen at render time from the palette the reader is actually in: a dark green
 that reads well on cream is 1.4:1 on charcoal, which is no colour at all.
 Red, green and blue are reserved for the cards — better, worse, no change — so
-nothing else on the page uses them. The detail table tints the **Scope cell**
-(not the whole row: seventeen tinted columns is a lot of colour for one fact,
-and it reads as a verdict on the row rather than a label on its scope) in warm
-sand for the North cluster, lilac for the South and neutral gray for the back
-office, with a key beside the download button. The scenario kinds stay violet,
-orange and gray.
+nothing else on the page uses them. The scenario kinds stay violet, orange and
+gray.
+
+The detail table tints the **Scope cell** (not the whole row: seventeen tinted
+columns is a lot of colour for one fact, and it reads as a verdict on the row
+rather than a label on its scope) — amber for the North cluster, violet for the
+South, slate for the back office, with a key beside the download button. Those
+three are the one set of colours here that is *not* chosen per mode, and the
+reason is a bug worth knowing about. Switching Light/Dark in Streamlit's menu
+re-themes the browser **without rerunning the script**: the page repaints, the
+Python that picked a colour from the mode never runs again, and so a hex it
+chose stays on screen after the reader has switched away from it — a pale sand
+under off-white text, at about 1.2:1, until something else happens to cause a
+rerun. So each region is one translucent wash instead (`rgba(214, 150, 30,
+0.3)` and friends) and the Scope cell sets no text colour at all. The browser
+composites the wash against whatever the page background is on every repaint
+and leaves the words in whatever colour it is currently painting text, so both
+halves follow the reader with no help from this code. Composited, the three
+regions land further apart than the solid tints they replaced (worst pair 18.5
+against 10.4 by delta-E) and the body text clears AA on all six backgrounds by
+at least 8.3:1.
 
 Nothing here was eyeballed. Tests recompute every contrast ratio in both
 palettes and hold each to WCAG AA — charcoal on cream is 14.2:1, off-white on

@@ -360,7 +360,6 @@ def show_detail(results, key, choice, roles, changes=None):
     """
     st.markdown("#### The rows behind the figures")
     dimensions = filter_dimensions()
-    mode = active_mode()
     plan = views.filter_plan(
         results["scenarios"][key]["plan"], roles, choice["scopes"]
     )
@@ -383,7 +382,14 @@ def show_detail(results, key, choice, roles, changes=None):
         # keep the page's own background. column_config still decides
         # every number's format - Streamlit's own rule - so the tints
         # cannot undo 7d.
-        views.plan_styler(view, dimensions, mode=mode),
+        #
+        # NO MODE IS PASSED, and that is the fix for 11/20: the tint is
+        # one translucent wash per region that the browser composites
+        # over whatever the page background is at the moment it paints.
+        # A theme switch in the menu does not rerun this script, so a
+        # colour chosen here from the mode would still be on screen,
+        # wrong, long after the reader had switched.
+        views.plan_styler(view, dimensions),
         hide_index=True,
         width="stretch",
         column_config=plan_column_config(),
@@ -414,7 +420,7 @@ def show_detail(results, key, choice, roles, changes=None):
     download, legend = st.columns([2, 3], vertical_alignment="center")
     st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
     legend.markdown(
-        views.region_key_html(views.region_key_rows(dimensions, mode)),
+        views.region_key_html(views.region_key_rows(dimensions)),
         unsafe_allow_html=True,
     )
     download.download_button(
