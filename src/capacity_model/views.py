@@ -501,48 +501,102 @@ def headline_cards(results, key):
 # used, with a third colour for no change at all.
 # ---------------------------------------------------------------------------
 
-# Green, red and blue, ONE PAIR EACH (Siri, 11/19). These began as
-# Streamlit's own three, so that a card looked like the rest of the page.
-# Measuring them showed two of the three never reached WCAG AA as small
-# text, so they were darkened; the move to a cream page and a charcoal
-# one re-measured all three again.
+# Green, red and blue, AS NAMES RATHER THAN HEXES (Siri, 11/20).
 #
-# The dark shades are not the light ones lightened by eye. A card is
-# small text, so each shade has to clear 4.5:1 on the background it is
-# actually drawn on, and the dark page is nearly black: that forces the
-# dark shades up into pastels. The light ones go the other way. The
-# figures each pair carries are the measured ratios against that mode's
-# page background; a test re-measures them rather than trusting these.
-BETTER_COLOURS = {
-    LIGHT_MODE: "#0f7034",   # green: moved the way a planner wants, 5.8:1
-    DARK_MODE: "#5fd98a",    #                                       9.7:1
-}
-WORSE_COLOURS = {
-    LIGHT_MODE: "#bc2626",   # red:   moved the other way,           5.7:1
-    DARK_MODE: "#ff9a94",    #                                       8.5:1
-}
-SAME_COLOURS = {
-    LIGHT_MODE: "#2048cc",   # blue:  did not move at all,           6.9:1
-    DARK_MODE: "#5c90fc",    #                                       5.6:1
-}
+# WHY A NAME AND NOT A SHADE. These were a light hex and a dark hex each,
+# and this module picked between them from the mode when the card was
+# drawn. Switching Light/Dark in the menu does not rerun the script, so
+# the pick was made once and then stranded: a light-mode green sat on a
+# charcoal card until something else happened to rerun the page. The
+# scope tints had the same bug and were fixed on 11/20 by taking the mode
+# away from them. These are fixed the same way, by a different route -
+# the card names its colour and Streamlit resolves the name in the
+# browser, on every repaint, from whichever theme is live.
+#
+# WHAT WE GAVE UP TO GET IT. The shade is no longer ours. Streamlit
+# derives its own from the active theme, and it derives for contrast:
+# measured in a real browser, its green is 7.7:1 against the page where
+# the hand-picked one was 5.8:1, and every one of the six is further
+# above AA than the hex it replaces. The cost is that a shade can change
+# under us when Streamlit changes how it derives, which is why
+# RENDERED_COLOURS below is measured rather than assumed and a browser
+# test re-measures it.
+BETTER_COLOUR = "green"   # moved the way a planner wants
+WORSE_COLOUR = "red"      # moved the other way
+SAME_COLOUR = "blue"      # did not move at all
 
 # The three together, for the tests that hold every card colour to AA and
 # check that no two of them could be mistaken for each other.
-CARD_COLOURS = (BETTER_COLOURS, WORSE_COLOURS, SAME_COLOURS)
+CARD_COLOURS = (BETTER_COLOUR, WORSE_COLOUR, SAME_COLOUR)
+
+# WHAT STREAMLIT ACTUALLY PAINTS THESE NAMES AS, in this app's theme.
+#
+# MEASURED, NOT CHOSEN. Every hex here was read off a real browser with
+# getComputedStyle, in both palettes, after driving the Light/Dark menu
+# with no refresh. Nothing in the app reads this table to draw with - the
+# page only ever sends the NAME - so it cannot go stale on the page. It
+# is here so the tests can hold Streamlit's choices to the same WCAG AA
+# bar the hand-picked hexes were held to, and so the next person can see
+# what the names come out as without opening a browser.
+#
+# Worth knowing: for violet, orange and gray Streamlit takes the hue from
+# .streamlit/config.toml and then DERIVES a readable text shade from it -
+# it does not use our hex. Our #5b3a8c violet renders as #382456. The
+# configured hex is used as-is only behind ":violet-background[]".
+RENDERED_COLOURS = {
+    "green":  {LIGHT_MODE: "#0c5a44", DARK_MODE: "#7ed5b0"},  # 7.7 / 9.9
+    "red":    {LIGHT_MODE: "#9e303b", DARK_MODE: "#f2919a"},  # 6.7 / 7.6
+    "blue":   {LIGHT_MODE: "#244fb4", DARK_MODE: "#85b8f8"},  # 6.9 / 8.4
+    "violet": {LIGHT_MODE: "#382456", DARK_MODE: "#e4d0f5"},  # 12.6 / 12.0
+    "orange": {LIGHT_MODE: "#422405", DARK_MODE: "#f2cda6"},  # 13.2 / 11.6
+    "gray":   {LIGHT_MODE: "#343432", DARK_MODE: "#dadde1"},  # 11.7 / 12.7
+}
+
+
+def rendered_colour(name, mode=None):
+    """The hex Streamlit paints a colour NAME as, as measured.
+
+    For the tests, and for nothing else. Painting from this would hand
+    the page a per-mode hex again, which is the whole bug this change
+    removed - so no caller outside the tests may use it, and a test
+    checks that none does.
+    """
+    pair = RENDERED_COLOURS.get(name)
+    return shade(pair, mode) if pair else None
 
 DOWN_ARROW = "▼"
 UP_ARROW = "▲"
 
+# The card's layout, unchanged from the version it replaces - but it now
+# has to style a Streamlit element it does not own. The delta line is
+# st.markdown, so that the colour directive in it is resolved live; the
+# container around each card carries a class of the form "st-key-cmcard-"
+# (Streamlit builds that from the container's key), which is the only
+# handle this module gets on it.
+CARD_KEY = "cmcard"
+
 CARD_STYLE = """<style>
-.cm-card { padding: 0.25rem 0 0.75rem 0; }
+.cm-card { padding: 0.25rem 0 0.25rem 0; }
 .cm-card-label { font-size: 0.875rem; line-height: 1.4; opacity: 0.65; }
 .cm-card-value { font-size: 2.25rem; font-weight: 600; line-height: 1.25; }
-.cm-card-delta { font-size: 0.875rem; line-height: 1.4; }
-.cm-card-delta-blank { visibility: hidden; }
-</style>"""
+/* Close the gap Streamlit puts between two elements in a container, so
+   the delta sits under the value the way it did when one block of HTML
+   drew all three lines. */
+[class*="st-key-CARD_KEY"] { gap: 0 !important; }
+/* The delta line: the card's own size, and no colour set here - the
+   colour arrives in the markdown as a name and Streamlit resolves it
+   against the live theme. A colour in this stylesheet would be the
+   stale-shade bug again, one layer further out. */
+[class*="st-key-CARD_KEY"] [data-testid="stMarkdownContainer"] p {
+    font-size: 0.875rem; line-height: 1.4; margin: 0;
+}
+[class*="st-key-CARD_KEY"] .cm-card-delta-blank {
+    visibility: hidden; font-size: 0.875rem; line-height: 1.4;
+}
+</style>""".replace("CARD_KEY", CARD_KEY)
 
 
-def card_colour(card, mode=None):
+def card_colour(card):
     """Green, red or blue - the one rule every card follows.
 
     Blue first, because "did not move" is a different statement from
@@ -550,18 +604,19 @@ def card_colour(card, mode=None):
     into the other. Then the direction: all six measures are better
     lower (11/16), so down is green and up is red.
 
-    The MEANING is picked here and the SHADE at the end, from the mode,
-    so light and dark cannot drift apart into two different rules about
-    which way is good.
+    Returns the NAME of a colour, not a hex, and takes no mode (11/20).
+    What the name looks like is Streamlit's business and it answers in
+    the browser, every repaint, from the theme that is actually showing.
+    This function decides only what the card MEANS.
     """
     if card["difference"] is None:
         return None
     if card["no_change"]:
-        return shade(SAME_COLOURS, mode)
+        return SAME_COLOUR
     better = card["difference"] < 0 if card["direction"] == BETTER_LOWER else (
         card["difference"] > 0
     )
-    return shade(BETTER_COLOURS if better else WORSE_COLOURS, mode)
+    return BETTER_COLOUR if better else WORSE_COLOUR
 
 
 def card_arrow(card):
@@ -627,28 +682,86 @@ def card_tooltip(card):
     return f"{lead} Against the baseline: {exact}."
 
 
-def card_html(card, mode=None):
-    """One card, in the layout st.metric drew.
+def card_key(card):
+    """The key for the container one card is drawn in.
 
-    Built as a string here rather than in the page so a test can read a
-    card's colour without starting one.
+    Streamlit turns a container's key into a CSS class ("st-key-" and
+    then the key), which is the only handle the stylesheet gets on an
+    element Streamlit owns. A class cannot contain a space, and every
+    measure label does, so the label is slugged rather than used raw -
+    "Network required FTE" would otherwise become four class names and
+    the card's two lines would drift apart.
     """
-    colour = card_colour(card, mode)
+    slug = re.sub(r"[^a-z0-9]+", "-", card["label"].lower()).strip("-")
+    return f"{CARD_KEY}-{slug}"
+
+
+def card_text(card):
+    """What the delta line says, before anything colours it.
+
+    The arrow or the words, which is the half of the card that does NOT
+    depend on colour. A reader who cannot separate green from red still
+    gets the direction here, and a no-change card says "no change" in
+    words rather than wearing an arrow it has not earned.
+    """
     delta = card["difference_text"]
-    if delta:
-        arrow = card_arrow(card)
-        shown = f"{arrow} {delta}" if arrow else delta
-        line = f'<div class="cm-card-delta" style="color: {colour};">{html.escape(shown)}</div>'
+    if not delta:
+        return ""
+    arrow = card_arrow(card)
+    return f"{arrow} {delta}" if arrow else delta
+
+
+def card_markdown(card):
+    """The delta line as Streamlit markdown: ":green[▼ 1.20]".
+
+    MARKDOWN AND NOT HTML, and that is the whole point of 11/20. A hex
+    written into HTML here is painted once and then stranded when the
+    reader switches Light/Dark, because the menu does not rerun this
+    script. A colour NAME is resolved in the browser against the live
+    theme, so the same string is right in both palettes and right the
+    instant the reader switches.
+
+    Returns "" for the baseline, which has nothing to compare against.
+    """
+    shown = card_text(card)
+    if not shown:
+        return ""
+    name = card_colour(card)
+    # The brackets a directive uses are the one thing that can break it,
+    # and a measure label never contains them - but the figure is built
+    # here, so this stays honest about what it is interpolating.
+    return f":{name}[{shown}]" if name else shown
+
+
+def card_html(card):
+    """The card's label and value - NO COLOUR ANYWHERE IN IT.
+
+    These two lines are drawn in the page's own text colour, which
+    Streamlit keeps live, so nothing here can go stale. The third line,
+    the coloured one, is card_markdown and is sent separately: a colour
+    directive does not survive inside raw HTML (checked in a browser -
+    ":green[x]" inside a div renders as that literal text), so the one
+    line that needs a live colour cannot be in this string.
+
+    The hover still hangs off this block, as it did before, carrying what
+    the measure is and the exact difference behind the rounding. It stays
+    here rather than moving to the delta line because Streamlit's own
+    help= draws a "?" button beside the text, and the card is meant to
+    look exactly as it did - so the hover covers the label and the value,
+    which is most of the card, and not the one strip below them.
+    """
+    if not card["difference_text"]:
+        # The baseline has nothing to compare against. A blank line is
+        # still drawn, invisibly, so six cards keep one height and a row
+        # does not jump when the run changes.
+        blank = '<div class="cm-card-delta-blank">&nbsp;</div>'
     else:
-        # The baseline has nothing to compare against. The line is still
-        # drawn, invisibly, so six cards keep one height and a row does
-        # not jump when the run changes.
-        line = '<div class="cm-card-delta cm-card-delta-blank">&nbsp;</div>'
+        blank = ""
     return (
         f'<div class="cm-card" title="{html.escape(card_tooltip(card))}">'
         f'<div class="cm-card-label">{html.escape(card["label"])}</div>'
         f'<div class="cm-card-value">{html.escape(card["value_text"])}</div>'
-        f"{line}</div>"
+        f"{blank}</div>"
     )
 
 
@@ -746,16 +859,39 @@ def comparison_display(table):
 # WHY THESE THREE COLOURS AND NOT ANY OTHERS. Red, green and blue are
 # spoken for: on a card they mean worse, better and no change (11/16), so
 # a kind wearing one of them would be read as a verdict on the run. That
-# leaves violet, orange and gray - which happen to be the three colours
-# Streamlit's own markdown palette offers outside red, green and blue, so
-# the kind beside a run in the sidebar (where only markdown is allowed)
-# and the kind in the comparison table (where the Styler takes a hex) can
-# be the SAME colour rather than two colours that nearly match. The hexes
-# live in .streamlit/config.toml as violetColor, orangeColor and
-# grayColor, and a test checks the file and this table agree.
+# leaves violet, orange and gray - the three colours Streamlit's own
+# markdown palette offers outside red, green and blue. The hexes live in
+# .streamlit/config.toml as violetColor, orangeColor and grayColor, and a
+# test checks the file and KIND_COLOURS below agree.
+#
+# ONE HUE PER KIND, SHOWN TWO WAYS (corrected 11/20). This comment used
+# to claim the sidebar caption and the comparison table were "the SAME
+# colour rather than two colours that nearly match". That was never true,
+# and a browser said so: Streamlit does not use the configured hex for
+# ":violet[Choice]", it DERIVES a more contrasty text shade from it. Our
+# #5b3a8c renders as #382456 - 21.9 apart by delta-E, which is two
+# colours, not one.
+#
+# What is true is one hue per kind, declared once in the theme file, and
+# shown two ways because the two places will not take the same thing:
+#   - the sidebar caption and anywhere else markdown is allowed get the
+#     NAME, and Streamlit resolves it live against whichever palette is
+#     showing;
+#   - the comparison table's Kind cell is drawn on a canvas by the
+#     dataframe, which renders no markdown at all (checked: a cell given
+#     ":violet[Choice]" shows that literal text), so it gets a
+#     translucent wash mixed from the same configured hue, over which the
+#     cell's own live text sits.
+# Neither carries a hex this module chose per mode, which is what makes
+# both of them right the instant a reader switches Light/Dark.
 #
 # Gray for a sensitivity is not an accident either: a sensitivity is not
-# a proposal, and a muted colour says so before the sentence does.
+# a proposal, and a muted colour says so before the sentence does. The
+# price of that is measured and worth knowing: gray is the one kind whose
+# derived text shade sits close to the body text (delta-E 8.2 in light,
+# 7.3 in dark), so in the sidebar a sensitivity reads as muted rather
+# than as a colour. The wash in the table and the key is what carries it
+# there, and the word itself always says which kind it is.
 # ---------------------------------------------------------------------------
 
 KIND_COLOURS = {
@@ -794,53 +930,111 @@ KIND_MEANINGS = {
 }
 
 
-def kind_colour(kind, mode=None):
-    """The hex a kind is written in, or None for a kind nobody declared."""
+# The wash a kind wears where markdown is not allowed (Siri, 11/20).
+#
+# Mixed from the kind's own LIGHT hex, at the same alpha the region tints
+# use, and the same string serves both palettes: the browser composites a
+# translucent background against whatever page is showing, so there is no
+# mode to pick and nothing to go stale.
+#
+# The light hex rather than the dark one, because that is the saturated
+# end of each hue: at 30% the light violet still reads as violet over the
+# charcoal page, where the dark pastel over cream washes out to nothing.
+# Measured: worst contrast 8.5:1 against the 4.5 AA asks, worst pair 12.4
+# apart by delta-E - closer than the regions manage, because these three
+# hues are muted by design, but still above the 10.4 of the solid tints
+# this approach replaced. The word in the cell says which kind it is
+# regardless, so the wash never has to carry the meaning alone.
+# Spelled out rather than mixed from KIND_COLOURS in a comprehension,
+# because the alpha and the hex-splitter both live further down this file
+# with the scope tints. A test mixes them the other way and fails if
+# these three and the theme file ever drift apart.
+KIND_TINTS = {
+    scenarios.KIND_CHOICE: "rgba(91, 58, 140, 0.3)",    # #5b3a8c violet
+    scenarios.KIND_RISK: "rgba(138, 75, 10, 0.3)",      # #8a4b0a orange
+    scenarios.KIND_SENSITIVITY: "rgba(92, 91, 88, 0.3)",  # #5c5b58 gray
+}
+
+
+def declared_kind_colour(kind, mode=None):
+    """The hex .streamlit/config.toml declares for a kind in a mode.
+
+    A RECORD OF THE THEME FILE, not a colour to draw with. Streamlit
+    resolves the kind's name against this hex itself, in the browser; if
+    this module painted with it instead, the page would be carrying a
+    shade chosen for whichever mode happened to be showing when the
+    script last ran, which is exactly the bug 11/20 removed. The tests
+    use it to check the file and this module agree and to hold both
+    palettes to AA. Nothing on the page may, and a test checks that.
+    """
     pair = KIND_COLOURS.get(kind)
     return shade(pair, mode) if pair else None
+
+
+def kind_tint(kind):
+    """The wash a kind wears - the same string in either palette.
+
+    No mode argument, on purpose, for the reason region_tint has none.
+    """
+    return KIND_TINTS.get(kind)
 
 
 def kind_markdown(kind):
     """A kind's label in Streamlit markdown, coloured: ":violet[Choice]".
 
-    For the sidebar captions, which take markdown and not HTML. The
-    colour name resolves to the hex in .streamlit/config.toml, so this
-    and the comparison table are the same colour by construction rather
-    than by two people choosing the same swatch.
+    For the sidebar captions, and for anywhere else that takes markdown.
+    The NAME goes to the browser and the browser picks the shade, every
+    repaint, from the palette that is actually showing - so this is the
+    one form of the kind that cannot be caught in the wrong mode.
     """
     label = kind_label(kind)
     name = KIND_MARKDOWN.get(kind)
     return f":{name}[{label}]" if name else label
 
 
-def kind_key_rows(mode=None):
-    """The kind key: one row per kind, in the order a reader meets them."""
+def kind_key_rows():
+    """The kind key: one row per kind, in the order a reader meets them.
+
+    A tint rather than a colour (11/20). The key sits under the
+    comparison table and has to match what that table paints, and the
+    table paints a wash.
+    """
     return [
         {
             "kind": kind,
             "label": kind_label(kind),
-            "colour": kind_colour(kind, mode),
+            "tint": kind_tint(kind),
             "meaning": KIND_MEANINGS[kind],
         }
         for kind in scenarios.KINDS
     ]
 
 
-def comparison_styler(table, mode=None):
-    """The comparison table with each run's kind in its kind's colour.
+def comparison_styler(table):
+    """The comparison table, each run's kind washed in its kind's hue.
 
-    The Kind column only. Streamlit takes the colours from a Styler and
-    its own column_config still decides every number's format, which is
-    what keeps 7d's one-format-per-measure rule true here.
+    THE CELL'S BACKGROUND, NOT ITS TEXT (Siri, 11/20). The dataframe
+    draws its cells on a canvas and renders no markdown in them, so the
+    live colour name that works everywhere else on this page cannot
+    reach here - a cell handed ":violet[Choice]" shows that literal
+    string, which was checked in a browser rather than assumed. A text
+    hex would be a colour chosen per mode, and stale the moment a reader
+    switched. A translucent background is neither: the browser mixes it
+    with whichever page is showing, and the text on top stays
+    Streamlit's own.
+
+    The Kind column only, and the Styler carries nothing but that, so
+    column_config still decides every number's format - which is what
+    keeps 7d's one-format-per-measure rule true here.
     """
-    colour_of = {
-        kind_label(kind): kind_colour(kind, mode) for kind in KIND_COLOURS
-    }
+    tint_of = {kind_label(kind): kind_tint(kind) for kind in KIND_COLOURS}
 
     def paint(column):
+        # No "color:" in what this returns. Setting one would put the
+        # stale-shade bug back a layer up, and a test greps for it.
         return [
-            f"color: {colour_of[value]}; font-weight: 600"
-            if value in colour_of else ""
+            f"background-color: {tint_of[value]}; font-weight: 600"
+            if value in tint_of else ""
             for value in column
         ]
 
@@ -1672,13 +1866,20 @@ def kind_key_html(rows):
     three things and nobody read it, because a reader scanning a ranked
     list wants to know what the word beside a run means, not to be
     taught a taxonomy.
+
+    THE SWATCH CARRIES THE KIND'S WASH AND THE WORD CARRIES NO COLOUR
+    (11/20). The swatch has to match what the table above it paints, and
+    that is a translucent wash - so the two agree by using one string.
+    The word used to be written in the kind's hex, which is a colour
+    picked per mode and therefore stale the moment a reader switched;
+    now it is the page's own text colour, which Streamlit keeps live,
+    and the swatch beside it says which kind it is.
     """
     body = "".join(
         f"<tr>"
-        f'<td><span class="cm-swatch" style="background: {row["colour"]};">'
+        f'<td><span class="cm-swatch" style="background: {row["tint"]};">'
         f"</span></td>"
-        f'<td style="color: {row["colour"]}; font-weight: 600;">'
-        f'{html.escape(row["label"])}</td>'
+        f'<td style="font-weight: 600;">{html.escape(row["label"])}</td>'
         f"<td>{html.escape(row['meaning'])}</td>"
         f"</tr>"
         for row in rows

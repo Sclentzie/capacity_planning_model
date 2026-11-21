@@ -93,30 +93,20 @@ def filter_dimensions():
     return api.dimensions()
 
 
-def active_mode():
-    """Which palette the viewer is looking at: "light" or "dark" (11/19).
-
-    This is the ONLY place the app asks, and it is asked on every rerun
-    rather than cached, because the answer changes when the reader
-    changes it. Everything custom-coloured takes the answer as an
-    argument, so a card, a scope tint and a kind label cannot end up
-    drawn in different palettes from each other.
-
-    Streamlit infers the mode from the background colour it ended up
-    with, and its own docs warn the answer "may be incorrect during a
-    change in theme", naming two cases: the first load of a session, and
-    the moment a reader switches. Both settle on the next rerun, and
-    views.resolve_mode turns an absent or unrecognised answer into light
-    rather than raising - so the worst case is one frame of light-palette
-    colours on a dark page, not a stack trace. The attribute is read
-    defensively for the same reason: an older or newer Streamlit that
-    does not offer it should cost a default, not the page.
-    """
-    try:
-        reported = st.context.theme.type
-    except Exception:  # noqa: BLE001 - a theme is never worth a blank page
-        reported = None
-    return views.resolve_mode(reported)
+# NOBODY ASKS WHICH PALETTE IS SHOWING ANY MORE (11/20).
+#
+# There used to be an active_mode() here, reading st.context.theme.type
+# and handing the answer to every custom-coloured thing on the page. It
+# was the right shape for a page that reruns, and this page does not:
+# switching Light/Dark in the menu re-themes the browser without sending
+# a rerun, so the answer this function gave was correct when it was asked
+# and wrong by the time anyone read it.
+#
+# Everything it used to serve now works without it. A card's delta is
+# markdown with a colour NAME in it; a kind in the sidebar is the same; a
+# scope tint and a kind's cell are translucent washes the browser mixes
+# against whichever page is showing. None of them can be caught in the
+# wrong palette, because none of them was ever told which palette to use.
 
 
 @st.cache_data
@@ -267,18 +257,36 @@ def show_cards(results, key):
         "exact difference behind the rounding."
     )
     cards = views.headline_cards(results, key)
-    mode = active_mode()
     st.markdown(views.CARD_STYLE, unsafe_allow_html=True)
     for start in range(0, len(cards), CARDS_PER_ROW):
         row = cards[start:start + CARDS_PER_ROW]
         for column, card in zip(st.columns(len(row)), row):
             # Drawn rather than st.metric, which has green, red and off
             # and no way to say "this did not move" - the third thing a
-            # card has to be able to say. Hover a card for the exact
-            # difference, which the card itself rounds.
-            column.markdown(
-                views.card_html(card, mode), unsafe_allow_html=True
-            )
+            # card has to be able to say.
+            #
+            # TWO ELEMENTS, NOT ONE (11/20). The label and the value are
+            # HTML, because the card's sizes are its own; the delta line
+            # is a separate st.markdown, because the colour in it is a
+            # NAME that Streamlit resolves in the browser against the
+            # live theme. They cannot be one string: a colour directive
+            # inside raw HTML renders as the literal text ":green[...]",
+            # which was checked in a browser rather than assumed.
+            #
+            # The container's key is what the stylesheet closes the gap
+            # between the two with, and what sizes the delta line.
+            with column.container(key=views.card_key(card)):
+                # The hover rides on this block, in a title attribute, as
+                # it did before. NOT on the delta line below: st.markdown
+                # takes a help= argument, but Streamlit renders it as a
+                # "?" button beside the text, and six of those across a
+                # card row is a change to the layout rather than to a
+                # colour. The sentence is the same one, on the label and
+                # the value, which is most of the card.
+                st.markdown(views.card_html(card), unsafe_allow_html=True)
+                delta = views.card_markdown(card)
+                if delta:
+                    st.markdown(delta)
 
 
 def show_charts(results, key, choice, roles):
@@ -452,12 +460,18 @@ def show_comparison(results):
         "measure is - the same sentence the cards in the other view give."
     )
     table = views.comparison_table(results)
-    mode = active_mode()
     st.dataframe(
-        # Each run's kind in its kind's colour (11/19), through a Styler;
-        # the formats still come from column_config, which Streamlit
-        # gives precedence.
-        views.comparison_styler(table, mode),
+        # Each run's kind washed in its kind's hue (11/20), through a
+        # Styler; the formats still come from column_config, which
+        # Streamlit gives precedence.
+        #
+        # A WASH AND NOT A TEXT COLOUR, and no mode is passed. The
+        # dataframe paints its cells on a canvas and renders no markdown
+        # in them, so the live colour name used everywhere else on this
+        # page cannot reach a cell. A translucent background is the one
+        # thing here that survives a theme switch, because the browser
+        # re-mixes it against the new page itself.
+        views.comparison_styler(table),
         hide_index=True,
         width="stretch",
         # The same formats and the same per-measure notes the cards use
@@ -472,7 +486,7 @@ def show_comparison(results):
     st.markdown("**Kind is declared by the run, not worked out here**")
     st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
     st.markdown(
-        views.kind_key_html(views.kind_key_rows(mode)), unsafe_allow_html=True
+        views.kind_key_html(views.kind_key_rows()), unsafe_allow_html=True
     )
     st.caption(
         "The ranking puts all three next to each other, and the cheapest "

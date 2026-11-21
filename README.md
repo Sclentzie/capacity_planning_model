@@ -207,12 +207,18 @@ unasked. There is no on-page toggle because Streamlit 1.67 has no API for
 setting the theme from page code (`st.context.theme` is read-only), so the
 sidebar points at the real control instead of faking one.
 
-The cards and the kind labels therefore come in a pair each, and the shade is
-chosen at render time from the palette the reader is actually in: a dark green
-that reads well on cream is 1.4:1 on charcoal, which is no colour at all.
-Red, green and blue are reserved for the cards — better, worse, no change — so
-nothing else on the page uses them. The scenario kinds stay violet, orange and
-gray.
+Nothing on the page picks its own shade any more. Switching Light/Dark in
+Streamlit's menu re-themes the browser **without rerunning the script**, so a
+colour this code chose from the mode was right when it was chosen and wrong the
+moment the reader switched — a dark green left on a charcoal page at 1.4:1,
+which is no colour at all, with nothing raising and nothing to notice until the
+next rerun. Everything coloured here is therefore built so that it has no mode
+to get wrong. A card's difference and a run's kind are sent as a colour *name*
+and Streamlit resolves it in the browser on every repaint; a scope tint and a
+kind's table cell are translucent washes the browser composites against
+whichever page is showing. Red, green and blue are still reserved for the cards
+— better, worse, no change — so nothing else uses them, and the kinds stay
+violet, orange and gray.
 
 The detail table tints the **Scope cell** (not the whole row: seventeen tinted
 columns is a lot of colour for one fact, and it reads as a verdict on the row
@@ -231,19 +237,32 @@ and leaves the words in whatever colour it is currently painting text, so both
 halves follow the reader with no help from this code. Composited, the three
 regions land further apart than the solid tints they replaced (worst pair 18.5
 against 10.4 by delta-E) and the body text clears AA on all six backgrounds by
-at least 8.3:1.
+at least 8.3:1. The comparison view's **Kind cell** is washed the same way, for
+a different reason: the dataframe draws its cells on a canvas and renders no
+markdown in them, so the colour name that works everywhere else cannot reach a
+cell there.
 
 Nothing here was eyeballed. Tests recompute every contrast ratio in both
 palettes and hold each to WCAG AA — charcoal on cream is 14.2:1, off-white on
 charcoal 14.4:1, a white label on either teal button 4.8:1 and 4.7:1 — and they
 also hold the colours *apart*, by CIE delta-E, so that no two things which mean
 different things can look the same. That second measure is what settled Siri's
-question about the no-change blue against the teal accent: the old `#0068c9` sat
-too close to the teal in dark mode, so the blue moved to `#2048cc` (light) and
-`#5c90fc` (dark), now 76.5 and 49.7 apart from their accents. The card colours
-moved for contrast in the same pass: green is `#0f7034` / `#5fd98a` and red
-`#bc2626` / `#ff9a94`. The tints are a thing done to the screen; the CSV is the
-same bytes it always was.
+question about the no-change blue against the teal accent, which is why the
+accent is a teal that means nothing rather than a colour already spoken for.
+
+Since the cards and the kinds stopped choosing their own shades, those checks
+measure what Streamlit actually paints rather than what this project declares —
+a distinction that turned out to matter, because Streamlit does not use the
+configured hex for a colour name, it derives a more contrasty one from it. Our
+`#5b3a8c` violet is painted `#382456`. The six rendered shades are recorded in
+`views.RENDERED_COLOURS`, measured in a real browser, and
+`tests/test_live_colours.py` drives the actual Light/Dark menu with no refresh
+and re-measures them. On contrast the derivation is an improvement — the worst
+of the six is 6.7:1 where the worst hand-picked hex was 5.6:1 — but it leaves
+three of them closer together than this project's own rules allow, Choice and
+Sensitivity worst at 19.3 apart in dark mode. That gap is recorded as a
+deliberately failing test rather than written off, and it is open. The tints
+are a thing done to the screen; the CSV is the same bytes it always was.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -251,9 +270,10 @@ happen to it that nobody is proposing, and a **sensitivity** varies one input of
 another run to test whether its finding holds. The dashboard shows it beside
 every run and the workbook names sensitivity runs in italics, both reading the
 same declared field — a sensitivity read as a proposal is how a finding gets
-quoted as something it never said. Each kind is written in its own colour —
-**violet** for a choice, **orange** for a risk, **gray** for a sensitivity —
-beside every run and in a small key table on the comparison view.
+quoted as something it never said. Each kind carries its own colour —
+**violet** for a choice, **orange** for a risk, **gray** for a sensitivity — as
+a coloured word beside every run, and as a wash behind the word in the
+comparison table and its key.
 
 Each headline card is read one way: **green** moved the way a planner wants,
 **red** moved the other way, **blue** did not move at all. All six measures are
@@ -299,7 +319,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 837 tests, about 85 minutes
+# The validation checks: 838 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -339,8 +359,16 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-837 tests across 24 files, all passing. Every validation check in the
+838 tests across 24 files, all passing. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
+
+A 25th file, `tests/test_live_colours.py`, holds 7 more that drive a real
+browser: they switch the theme through Streamlit's own menu with no refresh and
+read back the colours actually painted. They need playwright, which is
+deliberately not in `requirements.txt`, so they skip themselves when it is
+absent — the file says how to run them. They exist because every other test
+here asks Python what colour something is, and the bug they were written for
+was that Python's answer stopped being true.
 
 - **Hand calculations, against workbooks built by hand first.** The reference
   cases were worked out in Excel before the code existed and are committed

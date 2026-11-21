@@ -459,9 +459,12 @@ def test_a_custom_run_is_shown_through_the_browse_view_s_own_code(catalogue, sav
     cards = views.headline_cards(bundle, controls.CUSTOM_KEY)
     assert len(cards) == len(views.CARD_MEASURES)
     cost = next(card for card in cards if card["measure"] == "total_cost")
-    # +15% volume costs more, and the card has to say so in red.
+    # +15% volume costs more, and the card has to say so in red. The
+    # colour is a NAME since 11/20, resolved by the browser against the
+    # live theme, so there is one answer here rather than one per mode.
     assert cost["difference"] > 0
-    assert views.card_colour(cost) == views.shade(views.WORSE_COLOURS)
+    assert views.card_colour(cost) == views.WORSE_COLOUR
+    assert views.card_markdown(cost).startswith(f":{views.WORSE_COLOUR}[")
 
     # The charts and the table take the same bundle.
     assert not views.weekly_gap(bundle, controls.CUSTOM_KEY).empty
