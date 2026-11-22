@@ -379,9 +379,11 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 25th file, `tests/test_live_colours.py`, holds 7 more that drive a real
+A 25th file, `tests/test_live_colours.py`, holds 9 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
-read back the colours actually painted. They need playwright, which is
+read back the colours actually painted, and they check every card on every run
+against what the model says that measure did — card by card, rather than asking
+only whether a colour appears on the page somewhere. They need playwright, which is
 deliberately not in `requirements.txt`, so they skip themselves when it is
 absent — the file says how to run them. They exist because every other test
 here asks Python what colour something is, and the bug they were written for

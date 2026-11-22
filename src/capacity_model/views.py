@@ -590,9 +590,6 @@ CARD_STYLE = """<style>
 [class*="st-key-CARD_KEY"] [data-testid="stMarkdownContainer"] p {
     font-size: 0.875rem; line-height: 1.4; margin: 0;
 }
-[class*="st-key-CARD_KEY"] .cm-card-delta-blank {
-    visibility: hidden; font-size: 0.875rem; line-height: 1.4;
-}
 </style>""".replace("CARD_KEY", CARD_KEY)
 
 
@@ -711,6 +708,28 @@ def card_text(card):
     return f"{arrow} {delta}" if arrow else delta
 
 
+# A non-breaking space: what the delta line says when there is nothing to
+# say. The BASELINE needs this - it has no run to compare itself against.
+#
+# WHY A BLANK LINE RATHER THAN NO LINE (11/21, Siri's on-screen bug).
+# The page used to skip st.markdown entirely for a card with no delta,
+# and draw an invisible spacer div inside the card's HTML instead to keep
+# the row one height. Two mechanisms for one blank line, and the cost was
+# not cosmetic: it meant a card held ONE element on the baseline and TWO
+# on every other run. Streamlit addresses the children of a container by
+# position, so a rerun that changes that count makes it rebuild the row
+# rather than update it in place - and while it rebuilds, the PREVIOUS
+# run's six delta lines are still on screen. Switching from a run where
+# everything got worse to one where things improved therefore showed, for
+# a moment, six red cards under the new run's numbers.
+#
+# One element always, carrying a space when it has nothing else, means
+# the structure never changes and Streamlit updates the text where it
+# stands. Measured: the mixed row - some cards repainted, the rest still
+# showing the last run's colour - is gone.
+CARD_BLANK = " "
+
+
 def card_markdown(card):
     """The delta line as Streamlit markdown: ":green[▼ 1.20]".
 
@@ -750,18 +769,11 @@ def card_html(card):
     look exactly as it did - so the hover covers the label and the value,
     which is most of the card, and not the one strip below them.
     """
-    if not card["difference_text"]:
-        # The baseline has nothing to compare against. A blank line is
-        # still drawn, invisibly, so six cards keep one height and a row
-        # does not jump when the run changes.
-        blank = '<div class="cm-card-delta-blank">&nbsp;</div>'
-    else:
-        blank = ""
     return (
         f'<div class="cm-card" title="{html.escape(card_tooltip(card))}">'
         f'<div class="cm-card-label">{html.escape(card["label"])}</div>'
         f'<div class="cm-card-value">{html.escape(card["value_text"])}</div>'
-        f"{blank}</div>"
+        "</div>"
     )
 
 

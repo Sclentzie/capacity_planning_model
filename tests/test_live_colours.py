@@ -297,3 +297,136 @@ def test_the_washes_are_the_same_string_in_both_palettes(page):
         "a key swatch changed when the palette did, so it is being "
         "chosen from the mode rather than composited by the browser"
     )
+
+
+@pytest.fixture(scope="module")
+def expected_cards():
+    """What every card on every run MEANS, taken from the model.
+
+    THE PAGE IS NOT ASKED. The point of the test below is to compare two
+    independent answers - what the model says a measure did, and what
+    colour the browser painted it - so the expectation has to come from
+    the model and not from anything the page rendered.
+    """
+    from capacity_model import api
+
+    results = api.load_results()
+    return {
+        entry["name"]: {
+            card["label"]: views.card_colour(card)
+            for card in views.headline_cards(results, entry["key"])
+        }
+        for entry in views.menu_items(results)
+    }
+
+
+def pick_run(tab, name):
+    """Click a run in the sidebar by the name the picker shows."""
+    for option in tab.query_selector_all('[data-testid="stRadio"] label'):
+        if option.inner_text().strip().startswith(name):
+            option.click()
+            return True
+    return False
+
+
+def cards_on(tab):
+    """Each card now: its label, and the colour its delta line is painted.
+
+    Keyed off the container each card is drawn in, so a card is read as a
+    whole rather than by position - the baseline draws no delta at all,
+    and reading by position would shift every card after it by one.
+    """
+    found = tab.evaluate("""
+      () => Array.from(document.querySelectorAll('[class*="st-key-cmcard"]'))
+        .map(card => {
+          const label = card.querySelector('.cm-card-label');
+          const delta = card.querySelector('span.stMarkdownColoredText');
+          return [label ? label.textContent.trim() : null,
+                  delta ? getComputedStyle(delta).color : null];
+        })
+    """)
+    return [(label, as_hex(colour) if colour else None)
+            for label, colour in found]
+
+
+def running(tab):
+    """Is Streamlit still rerunning? Its status widget says so."""
+    return bool(tab.query_selector('[data-testid="stStatusWidget"]'))
+
+
+def settled_cards(tab, tries=60, stable=3):
+    """The cards once the rerun has finished AND they have stopped moving.
+
+    TWO CONDITIONS, AND BOTH ARE NEEDED. Streamlit's status widget says
+    when the script is still running, which rules out reading a page
+    that has not been sent its new numbers yet. But the widget going
+    away is not the end of it: the six delta lines are six elements, and
+    the browser applies them in quick succession, so the row can still
+    be half-repainted for a moment after the server is done.
+
+    So this also waits for the reading to repeat unchanged three times.
+    Reading once - or once the status widget clears - makes this test
+    flaky in the one way a colour test must not be: it would sometimes
+    read a row that really IS all one colour, because it caught the
+    previous run's, and sometimes pass anyway. That is the exact bug
+    this file is here to catch, and a test that can see it by accident
+    can also miss it by accident.
+    """
+    last, repeats = None, 0
+    for _ in range(tries):
+        now = None if running(tab) else cards_on(tab)
+        if now and now == last:
+            repeats += 1
+            if repeats >= stable:
+                return now
+        else:
+            repeats = 0
+        last = now
+        tab.wait_for_timeout(120)
+    return last
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_every_card_wears_its_own_colour(page, expected_cards, mode, label):
+    """EVERY card, on EVERY run, in both palettes (Siri, 11/21).
+
+    WHY THIS EXISTS, AND WHAT IT CATCHES THAT THE TESTS ABOVE DO NOT.
+    test_a_card_delta_is_painted_the_shade_we_recorded asks whether a
+    colour appears ON THE PAGE for a run that should produce it. That is
+    a weaker question than it looks: a page whose six cards were ALL
+    green would answer it yes for a run that moved four measures the
+    right way, and nothing here would have noticed. Siri reported seeing
+    exactly that shape - a row of cards wearing one colour instead of
+    each its own - so this asks the question properly: card by card,
+    against what the model says that card did, with nothing shared
+    between the two sides of the comparison.
+
+    It pins what a reader is actually promised. Not "green is somewhere
+    on the page", but "the overtime card is green BECAUSE overtime fell".
+    """
+    set_theme(page, label)
+    # The hex Streamlit paints each colour name as, in this palette, so a
+    # painted colour can be read back as the meaning it stands for.
+    meaning_of = {views.rendered_colour(name, mode): name
+                  for name in views.CARD_COLOURS}
+
+    wrong, checked = [], 0
+    for run, wanted in expected_cards.items():
+        assert pick_run(page, run), f"no radio option for {run!r}"
+        for card, painted in settled_cards(page):
+            checked += 1
+            want = wanted.get(card)
+            got = meaning_of.get(painted) if painted else None
+            if want != got:
+                wrong.append(
+                    f"{mode}/{run}/{card}: the model says {want}, the page "
+                    f"painted {got} ({painted})"
+                )
+
+    assert checked >= len(expected_cards), "no cards were read at all"
+    assert not wrong, (
+        "%d of %d cards are not wearing their own colour:\n  %s"
+        % (len(wrong), checked, "\n  ".join(wrong[:25]))
+    )

@@ -284,9 +284,15 @@ def show_cards(results, key):
                 # colour. The sentence is the same one, on the label and
                 # the value, which is most of the card.
                 st.markdown(views.card_html(card), unsafe_allow_html=True)
-                delta = views.card_markdown(card)
-                if delta:
-                    st.markdown(delta)
+                # ALWAYS this second element, even when there is nothing
+                # to say (11/21). Emitting it only when the card has a
+                # delta made a card one element on the baseline and two
+                # everywhere else, and Streamlit rebuilds a container
+                # whose child count changes instead of updating it - so
+                # the previous run's whole row of colours stayed on
+                # screen while the new one was built. views.CARD_BLANK
+                # carries the reasoning and the measurement.
+                st.markdown(views.card_markdown(card) or views.CARD_BLANK)
 
 
 def show_charts(results, key, choice, roles):
