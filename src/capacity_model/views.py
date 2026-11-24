@@ -544,13 +544,22 @@ CARD_COLOURS = (BETTER_COLOUR, WORSE_COLOUR, SAME_COLOUR)
 # it does not use our hex. Our #5b3a8c violet renders as #382456. The
 # configured hex is used as-is only behind ":violet-background[]".
 RENDERED_COLOURS = {
-    "green":  {LIGHT_MODE: "#0c5a44", DARK_MODE: "#7ed5b0"},  # 7.7 / 9.9
+    "green":  {LIGHT_MODE: "#246b27", DARK_MODE: "#7ed5b0"},  # 6.1 / 9.9
     "red":    {LIGHT_MODE: "#9e303b", DARK_MODE: "#f2919a"},  # 6.7 / 7.6
     "blue":   {LIGHT_MODE: "#244fb4", DARK_MODE: "#85b8f8"},  # 6.9 / 8.4
     "violet": {LIGHT_MODE: "#382456", DARK_MODE: "#e4d0f5"},  # 12.6 / 12.0
     "orange": {LIGHT_MODE: "#422405", DARK_MODE: "#f2cda6"},  # 13.2 / 11.6
     "gray":   {LIGHT_MODE: "#343432", DARK_MODE: "#bad8d9"},  # 11.7 / 11.4
 }
+
+# The light green moved on 11/23 and the dark one did not, so they are
+# not the same hue any more: #246b27 is hue 140 and #7ed5b0 is hue 164.
+# That is deliberate (Siri's call). On cream, Streamlit's inherited green
+# derived to #0c5a44 - a teal at hue 167 that read as dark gray against
+# the page, and sat only 29.8 from the teal accent. On charcoal the same
+# family reads as a clear mint, so the dark one was left alone rather
+# than changed for symmetry nobody would see: the two palettes are never
+# on screen together.
 
 
 def rendered_colour(name, mode=None):
@@ -578,17 +587,31 @@ CARD_KEY = "cmcard"
 CARD_STYLE = """<style>
 .cm-card { padding: 0.25rem 0 0.25rem 0; }
 .cm-card-label { font-size: 0.875rem; line-height: 1.4; opacity: 0.65; }
-.cm-card-value { font-size: 2.25rem; font-weight: 600; line-height: 1.25; }
+/* The number itself, and the room underneath it. THE MARGIN IS LOAD
+   BEARING (11/23): with gap:0 below and Streamlit's own negative margin
+   on a markdown block, the value's box and the change line's box
+   measured 12px INTO each other, so a wide figure with commas and a
+   dollar sign sat on top of the line below it. Measured in a browser at
+   three window widths, sidebar open and collapsed, and held there by a
+   test - a number that covers its own change line is a card that lies
+   about two things at once. */
+.cm-card-value {
+    font-size: 2.25rem; font-weight: 600; line-height: 1.25;
+    margin-bottom: 1.25rem;
+}
 /* Close the gap Streamlit puts between two elements in a container, so
    the delta sits under the value the way it did when one block of HTML
-   drew all three lines. */
+   drew all three lines. The space between the two is the value's own
+   margin above, not this - gap would reopen on any card that happened
+   to draw a third element. */
 [class*="st-key-CARD_KEY"] { gap: 0 !important; }
-/* The delta line: the card's own size, and no colour set here - the
-   colour arrives in the markdown as a name and Streamlit resolves it
-   against the live theme. A colour in this stylesheet would be the
-   stale-shade bug again, one layer further out. */
+/* The delta line: the card's own size, BOLD (11/23) so the change reads
+   as the card's point rather than as a footnote to the number, and no
+   colour set here - the colour arrives in the markdown as a name and
+   Streamlit resolves it against the live theme. A colour in this
+   stylesheet would be the stale-shade bug again, one layer further out. */
 [class*="st-key-CARD_KEY"] [data-testid="stMarkdownContainer"] p {
-    font-size: 0.875rem; line-height: 1.4; margin: 0;
+    font-size: 0.875rem; line-height: 1.4; margin: 0; font-weight: 600;
 }
 </style>""".replace("CARD_KEY", CARD_KEY)
 
@@ -727,7 +750,18 @@ def card_text(card):
 # the structure never changes and Streamlit updates the text where it
 # stands. Measured: the mixed row - some cards repainted, the rest still
 # showing the last run's colour - is gone.
-CARD_BLANK = " "
+#
+# THE ENTITY, NOT THE CHARACTER (11/23). This held a bare non-breaking
+# space from 11/21 until a browser was asked what it actually drew.
+# Streamlit renders a markdown block whose whole content is whitespace as
+# an EMPTY container: no paragraph at all, nothing on the page, no line.
+# So the baseline's cards quietly lost the blank line that keeps a row
+# one height, and the row jumped when the run changed - the very thing
+# the old spacer div was there to stop. Written as the HTML entity,
+# markdown passes it through and Streamlit draws "<p>&nbsp;</p>", a real
+# line of the card's own height. Measured: 26px, the same as a card that
+# has something to say.
+CARD_BLANK = "&nbsp;"
 
 
 def card_markdown(card):

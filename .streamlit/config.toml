@@ -79,11 +79,37 @@ violetColor = "#5b3a8c"
 orangeColor = "#8a4b0a"
 grayColor = "#5c5b58"   # a WARM gray, which also pulls it clear of the teal
 
+# THE BETTER GREEN, SET RATHER THAN INHERITED (11/23, Siri's walkthrough).
+# Everything else on this page names a colour and lets Streamlit derive
+# the shade; for green that meant inheriting Streamlit's own, and on a
+# cream page the result was #0c5a44 - hue 167, which is TEAL, at chroma
+# 29 against the red's 50 and the blue's 62. Measured, it is a green;
+# read, it is dark gray. "The thing got better" is the single most
+# important word a card says, and it was the one saying it least.
+#
+# So green is declared here like the rest, and the derivation does what
+# it does to the others: keeps the hue, roughly halves the chroma, and
+# drops the lightness. #37a53d comes out as #246b27 - hue 140, which is
+# green with nothing teal in it, and chroma 48, which finally sits
+# beside the red's 50 instead of under it.
+#
+# It buys contrast balance too. The three verdicts used to read 7.7, 6.7
+# and 6.9 to one on the page; they now read 6.1, 6.7 and 6.9, so no one
+# of them shouts. 6.1 is still well past AA's 4.5, and 5.5 on the
+# sidebar panel.
+#
+# And it settles an old failing check: the better green against the teal
+# accent was 29.8 apart where this project asks for 40, because a
+# teal-green and a teal are the same family. At hue 140 they are 52.6.
+# Dark mode is deliberately untouched - Siri's call, 11/23.
+greenColor = "#37a53d"
+
 [theme.light.sidebar]
 backgroundColor = "#f1ebe0"
 violetColor = "#5b3a8c"
 orangeColor = "#8a4b0a"
 grayColor = "#5c5b58"
+greenColor = "#37a53d"
 
 
 # ---------------------------------------------------------------------------

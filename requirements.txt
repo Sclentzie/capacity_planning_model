@@ -4,7 +4,7 @@
 # Pinned to exact versions, because the whole point of a fixed random seed
 # is that two runs give the same answers - and a library that rounds, sorts
 # or seasonally decomposes differently in a later release would break that
-# quietly. These are the versions the 840 validation checks were run on
+# quietly. These are the versions the 839 validation checks were run on
 # (Python 3.14, Windows). Raising one is a deliberate step: bump it, run the
 # suite, and the pinned headline figures in tests will say if an answer moved.
 

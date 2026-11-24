@@ -1479,14 +1479,23 @@ def test_the_theme_passes_wcag_aa(results, mode):
 #     and that pair is now 26.2. It is pinned by a test that passes -
 #     test_the_kinds_clear_the_bar_a_labelled_colour_answers_to.
 #
-# What is left is a card verdict against the teal accent, in one palette
-# each. Those stay on the strict bar, because that is the one pairing
-# where colour IS the only signal: the accent is a control's fill and it
-# carries no word at all, so a slider that read as "no change" would be
-# a lie about a number with nothing to correct it. Unreachable so far by
-# moving only the kinds, and not Siri's to trade away cheaply.
+# What was left was a card verdict against the teal accent, in one
+# palette each. Those stay on the strict bar, because that is the one
+# pairing where colour IS the only signal: the accent is a control's
+# fill and it carries no word at all, so a slider that read as "no
+# change" would be a lie about a number with nothing to correct it.
+#
+# ONE OF THOSE TWO IS NOW FIXED (11/23). The light pair was the better
+# green against the teal accent, 29.8 apart, and the reason was that
+# both of them were teal: Streamlit's inherited green derived to
+# #0c5a44, hue 167. Setting a real green in the theme file moved the
+# rendered shade to #246b27, hue 140, and the pair to 52.6 - so it was
+# never a bar that needed lowering, it was a hue that needed choosing.
+# It came off this list by being measured again, which is the only way
+# anything should come off it.
+#
+# The dark no-change blue against the dark accent is still open at 32.8.
 TOO_CLOSE = {
-    ("light", "better", "accent"),
     ("dark", "no change", "accent"),
 }
 
@@ -1601,11 +1610,16 @@ def test_no_colour_on_the_page_means_two_things(results, mode):
     assert set(views.KIND_MARKDOWN.values()) <= {"violet", "orange", "gray"}
 
 
-@pytest.mark.parametrize("mode", views.MODES)
+# Only the palettes that still have a recorded pair. Parametrising over
+# both modes would hand the light one a test with nothing to check,
+# which would fail on "no recorded pair" and be reported as an EXPECTED
+# failure - a strict xfail passing for a reason that has nothing to do
+# with colour.
+@pytest.mark.parametrize("mode", sorted({mode for mode, _, _ in TOO_CLOSE}))
 @pytest.mark.xfail(
     strict=True,
-    reason="a card verdict against the teal accent is under DISTINCT in "
-           "one palette each; open, and not to be traded away cheaply",
+    reason="the dark no-change blue is under DISTINCT against the dark "
+           "accent; open, and not to be traded away cheaply",
 )
 def test_the_derived_shades_that_are_too_close(mode):
     """The gap, written down as a failing test rather than as a comment.
@@ -1620,10 +1634,13 @@ def test_the_derived_shades_that_are_too_close(mode):
     of them kind-against-kind. Those were the ones a reader could at
     least read their way out of, since a kind is printed as its own word,
     and Siri moved them to the DIFFERENT bar and had the gray re-hued to
-    clear it - see TOO_CLOSE above. The two that remain are the better
-    green against the light accent (29.8) and the no-change blue against
-    the dark accent (32.8), and they stay strict because the accent is
-    the one thing on this page that wears a colour and no word.
+    clear it. A fifth went on 11/23: the better green against the light
+    accent was 29.8 because Streamlit's inherited green was a teal, and
+    choosing a real one took the pair to 52.6.
+
+    ONE REMAINS - the no-change blue against the dark accent, 32.8 - and
+    it stays strict because the accent is the one thing on this page
+    that wears a colour and no word.
     """
     shades = painted_shades(mode)
     checked = 0

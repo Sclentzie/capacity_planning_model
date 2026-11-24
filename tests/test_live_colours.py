@@ -27,12 +27,17 @@ What they measured when they were written, in both palettes, switching
 with no refresh - and every one of these matches views.RENDERED_COLOURS:
 
                      light      dark
-    better (green)   #0c5a44    #7ed5b0
+    better (green)   #246b27    #7ed5b0
     worse (red)      #9e303b    #f2919a
     no change (blue) #244fb4    #85b8f8
     Choice (violet)  #382456    #e4d0f5
     Risk (orange)    #422405    #f2cda6
     Sensitivity      #343432    #bad8d9
+
+The light "better" green was #0c5a44 until 11/23, when greenColor was set
+in the theme file: Streamlit's own green derived to a teal on cream that
+read as dark gray. The light and dark greens are no longer the same hue,
+on purpose - the two palettes are never on screen together.
 
 The dark Sensitivity shade was #dadde1 until 11/20, when the theme file's
 dark grayColor was re-hued to pull Sensitivity off Choice: measured as
@@ -321,12 +326,26 @@ def expected_cards():
 
 
 def pick_run(tab, name):
-    """Click a run in the sidebar by the name the picker shows."""
-    for option in tab.query_selector_all('[data-testid="stRadio"] label'):
-        if option.inner_text().strip().startswith(name):
-            option.click()
-            return True
-    return False
+    """Click a run in the sidebar by the name the picker shows.
+
+    Clicked through the DOM rather than with a real mouse click, because
+    the spacing test below runs with the sidebar COLLAPSED, and a
+    collapsed sidebar is nought pixels wide - Playwright refuses to click
+    what it cannot see, while the element is still there and still wired
+    up. Verified both ways: the run changes and the sidebar stays shut.
+    """
+    return tab.evaluate("""
+      (name) => {
+        for (const option of document.querySelectorAll(
+               '[data-testid="stRadio"] label')) {
+          if (option.innerText.trim().startsWith(name)) {
+            option.click();
+            return true;
+          }
+        }
+        return false;
+      }
+    """, name)
 
 
 def cards_on(tab):
@@ -430,3 +449,163 @@ def test_every_card_wears_its_own_colour(page, expected_cards, mode, label):
         "%d of %d cards are not wearing their own colour:\n  %s"
         % (len(wrong), checked, "\n  ".join(wrong[:25]))
     )
+
+
+# The sidebar, driven the same way and for the same reason. Two
+# different controls: Streamlit swaps the collapse button for an expand
+# button once the sidebar is shut, and the shut state SURVIVES A RELOAD,
+# so a test that collapses it has to open it again itself.
+TOGGLE_SIDEBAR = """
+  (wanted) => {
+    const selector = wanted
+      ? '[data-testid="stExpandSidebarButton"] button'
+      : '[data-testid="stSidebarCollapseButton"] button';
+    const button = document.querySelector(selector)
+      || document.querySelector(selector.replace(' button', ''));
+    if (!button) return false;
+    button.click();
+    return true;
+  }
+"""
+SIDEBAR_WIDTH = """
+  () => { const bar = document.querySelector('[data-testid="stSidebar"]');
+          return bar ? Math.round(bar.getBoundingClientRect().width) : 0; }
+"""
+
+
+def set_sidebar(tab, open_it):
+    """Open or close the sidebar, and prove it took."""
+    for _ in range(3):
+        width = tab.evaluate(SIDEBAR_WIDTH)
+        if (width > 0) == open_it:
+            return True
+        if not tab.evaluate(TOGGLE_SIDEBAR, open_it):
+            return False
+        tab.wait_for_timeout(1200)
+    return (tab.evaluate(SIDEBAR_WIDTH) > 0) == open_it
+
+# Each card's two boxes: the big number's, and the change line's.
+CARD_BOXES = """
+  () => Array.from(document.querySelectorAll('[class*="st-key-cmcard"]'))
+    .map(card => {
+      const value = card.querySelector('.cm-card-value');
+      const delta = card.querySelector(
+        '[data-testid="stMarkdownContainer"] p');
+      if (!value || !delta) return null;
+      const vb = value.getBoundingClientRect();
+      const db = delta.getBoundingClientRect();
+      return {label: (card.querySelector('.cm-card-label') || {}).textContent,
+              value: value.textContent.trim(),
+              delta: delta.textContent.trim(),
+              gap: db.top - vb.bottom,
+              weight: getComputedStyle(delta).fontWeight};
+    }).filter(Boolean)
+"""
+
+# A card's number and its change line must not touch, let alone overlap.
+# One clear pixel is the test; the design leaves eight.
+CLEAR_PIXELS = 1.0
+
+WINDOW_WIDTHS = (1280, 1440, 1920)
+
+
+def settled_boxes(tab, tries=40, stable=2):
+    """The card boxes once the rerun has finished and the layout is still."""
+    last, repeats = None, 0
+    for _ in range(tries):
+        now = None if running(tab) else tab.evaluate(CARD_BOXES)
+        if now and now == last:
+            repeats += 1
+            if repeats >= stable:
+                return now
+        else:
+            repeats = 0
+        last = now
+        tab.wait_for_timeout(120)
+    return last or []
+
+
+@pytest.mark.parametrize("width", WINDOW_WIDTHS)
+def test_a_number_never_covers_its_own_change_line(page, expected_cards, width):
+    """THE CARD'S OWN NUMBER SAT ON TOP OF ITS CHANGE LINE (Siri, 11/23).
+
+    Measured before the fix, at every width and on every card: the two
+    boxes overlapped by TWELVE pixels. Streamlit puts a negative margin
+    under a markdown block and the card's container sets gap:0, so the
+    change line was pulled up under the figure - worst where the figure
+    was widest, a dollar value with commas, which is exactly where a
+    reader most needs to read both.
+
+    Checked at three window widths with the sidebar open and collapsed,
+    because the column a card sits in is narrower with the sidebar out,
+    and a figure that wraps to two lines is the case most likely to
+    close the gap again. Every run, because the widest value in the
+    model is the one that will find this.
+    """
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.wait_for_timeout(500)
+    tight, narrowest, checked = [], None, 0
+    try:
+        for collapsed in (False, True):
+            assert set_sidebar(page, not collapsed), (
+                "could not %s the sidebar" % ("close" if collapsed else "open")
+            )
+            assert (page.evaluate(SIDEBAR_WIDTH) == 0) == collapsed, (
+                "the sidebar is not %s, so this pass measured the same "
+                "layout twice" % ("collapsed" if collapsed else "open")
+            )
+            where = "collapsed" if collapsed else "open"
+            for run in expected_cards:
+                assert pick_run(page, run), f"no radio option for {run!r}"
+                boxes = settled_boxes(page)
+                assert boxes, f"{width}/{where}/{run}: no cards on the page"
+                for box in boxes:
+                    checked += 1
+                    if narrowest is None or box["gap"] < narrowest:
+                        narrowest = box["gap"]
+                    if box["gap"] < CLEAR_PIXELS:
+                        tight.append(
+                            f"{width}px {where} / {run} / {box['label']}: "
+                            f"{box['value']!r} and {box['delta']!r} are "
+                            f"{box['gap']:.1f}px apart"
+                        )
+    finally:
+        # Put the page back the way the other tests expect to find it. A
+        # reload will NOT do it: Streamlit remembers a collapsed sidebar
+        # across one, so it has to be opened through its own control.
+        set_sidebar(page, True)
+        page.set_viewport_size({"width": 1600, "height": 1400})
+        page.wait_for_timeout(1200)
+
+    assert checked, "nothing was measured"
+    assert not tight, (
+        "%d of %d card readings have the number touching its own change "
+        "line (closest %.1fpx):\n  %s"
+        % (len(tight), checked, narrowest, "\n  ".join(tight[:20]))
+    )
+
+
+@pytest.mark.parametrize("width", WINDOW_WIDTHS)
+def test_the_change_line_is_bold_at_every_width(page, expected_cards, width):
+    """Bold on every card (Siri, 11/23).
+
+    Read off the rendered element rather than off the stylesheet, since
+    the stylesheet has to win against Streamlit's own paragraph styling
+    to take effect at all - which is the part that could quietly stop
+    being true.
+    """
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.wait_for_timeout(500)
+    try:
+        pick_run(page, "Volume +15%")
+        boxes = settled_boxes(page)
+        assert boxes, "no cards on the page"
+        for box in boxes:
+            assert int(box["weight"]) >= 600, (
+                f"{width}px / {box['label']}: the change line is weight "
+                f"{box['weight']}"
+            )
+    finally:
+        page.set_viewport_size({"width": 1600, "height": 1400})
+        page.wait_for_timeout(500)
+

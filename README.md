@@ -274,11 +274,23 @@ preserves a configured colour's hue exactly and flattens everything else, and
 the gray's hue sat 49 degrees from the violet's. Re-hueing the dark gray from
 a cool `#afb6bf` to a slate `#88bdbe` moved the pair to 26.2 — measured in a
 browser, after trying a warm gray that cleared the violet and then collided
-with the orange instead. The two pairs still open are a card verdict against
-the teal accent, which stays on the strict bar because the accent is the one
-thing here wearing a colour and no word; both are recorded as deliberately
-failing tests rather than written off. The tints
-are a thing done to the screen; the CSV is the same bytes it always was.
+with the orange instead.
+
+A fifth pair was the better green against the teal accent on cream, 29.8
+apart, and the reason turned out to be the same shape: both were teal. Green
+was the one colour here left to Streamlit's own, and on a cream page it
+derived to `#0c5a44` — hue 167, chroma 29 against the red's 50 — which
+measures as a green and reads as dark gray. Declaring `#37a53d` in the theme
+file takes the rendered shade to `#246b27`, hue 140, and the pair to 52.6.
+Contrast falls from 7.7 to 6.1 to one, still well past AA, and the three
+verdicts now read 6.1, 6.7 and 6.9 rather than one of them shouting. Dark
+mode keeps its mint green, so the two palettes no longer share that hue —
+deliberately, since they are never on screen together.
+
+One pair is still open: the no-change blue against the teal accent in dark
+mode, 32.8, recorded as a deliberately failing test rather than written off.
+The tints are a thing done to the screen; the CSV is the same bytes it always
+was.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -335,7 +347,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 840 tests, about 85 minutes
+# The validation checks: 839 tests, about 85 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -375,15 +387,17 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-840 tests across 24 files: 838 passing, and 2 that fail on purpose and are
+839 tests across 24 files: 838 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 25th file, `tests/test_live_colours.py`, holds 9 more that drive a real
+A 25th file, `tests/test_live_colours.py`, holds 15 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
-read back the colours actually painted, and they check every card on every run
-against what the model says that measure did — card by card, rather than asking
-only whether a colour appears on the page somewhere. They need playwright, which is
+read back the colours actually painted; they check every card on every run
+against what the model says that measure did, card by card, rather than asking
+only whether a colour appears on the page somewhere; and they measure the
+layout, since a number that covers its own change line is not something a
+stylesheet can be read to rule out. They need playwright, which is
 deliberately not in `requirements.txt`, so they skip themselves when it is
 absent — the file says how to run them. They exist because every other test
 here asks Python what colour something is, and the bug they were written for
