@@ -30,6 +30,13 @@ from . import api, export, scenarios
 BASELINE_KEY = "baseline"
 BASELINE_LABEL = "Baseline"
 
+# What the Kind column says for the baseline row (Siri, 11/25). Its file
+# declares a kind like every other run, but on a table ranked against the
+# baseline, the baseline is the line everything is measured from rather
+# than one of the three kinds of run - so it is named, not classified,
+# and it carries no kind colour.
+BASELINE_KIND_LABEL = BASELINE_LABEL
+
 
 # ---------------------------------------------------------------------------
 # Light and dark: every custom colour is a PAIR (7d, 11/19)
@@ -91,9 +98,26 @@ def shade(pair, mode=None):
 # dashboard looks the format up instead of choosing its own precision,
 # because a cost rounded to the dollar on the tab and to the cent on the
 # screen is the start of two sets of books.
+def money(value, decimals=0):
+    """Dollars, with the SIGN IN FRONT OF THE DOLLAR (Siri, 11/25).
+
+    Python's own formatting puts it the other way round - "$-51,569" -
+    which is not how anybody writes money and reads, for a moment, as a
+    dollar amount of minus something. The sign belongs to the quantity,
+    so it goes first.
+
+    The sign is taken from the ROUNDED figure, so a difference of four
+    tenths of a dollar against a column that prints whole dollars reads
+    "$0" rather than "-$0", which is a minus sign on a zero.
+    """
+    rounded = round(float(value), decimals)
+    sign = "-" if rounded < 0 else ""
+    return f"{sign}${abs(rounded):,.{decimals}f}"
+
+
 VALUE_FORMATS = {
-    export.MONEY: lambda value: f"${value:,.0f}",
-    export.MONEY_CENTS: lambda value: f"${value:,.2f}",
+    export.MONEY: money,
+    export.MONEY_CENTS: lambda value: money(value, 2),
     export.HOURS: lambda value: f"{value:,.1f}",
     export.FTE: lambda value: f"{value:,.2f}",
     export.DAYS: lambda value: f"{value:,.2f}",
@@ -611,7 +635,14 @@ CARD_STYLE = """<style>
    Streamlit resolves it against the live theme. A colour in this
    stylesheet would be the stale-shade bug again, one layer further out. */
 [class*="st-key-CARD_KEY"] [data-testid="stMarkdownContainer"] p {
-    font-size: 0.875rem; line-height: 1.4; margin: 0; font-weight: 600;
+    font-size: 0.875rem; line-height: 1.4; font-weight: 600;
+    /* ROOM UNDERNEATH (Siri, 11/25). The six cards are two rows of
+       three, and with no margin here the first row's change line sat
+       straight on top of the second row's label - two different cards'
+       text reading as one block. The margin is below only: the space
+       above is still the value's own, which is what keeps a wide figure
+       off this line. */
+    margin: 0 0 1.1rem 0;
 }
 </style>""".replace("CARD_KEY", CARD_KEY)
 
@@ -851,7 +882,21 @@ def comparison_table(results):
     baseline_cost = float(baseline["total_cost"].iloc[0])
 
     table = api.comparison_view(comparison)
-    table.insert(1, KIND_HEADER, [kind_label(kind) for kind in comparison["kind"]])
+    # THE BASELINE IS NOT A CHOICE (Siri, 11/25). Its file declares the
+    # kind "choice" because every run must declare one, but on a table
+    # ranked against the baseline, calling the baseline a choice reads as
+    # if somebody were proposing it - and a reader looking for the line
+    # everything else is measured against wants it named, not classified.
+    # Neutral in colour too: "Baseline" is not one of the three kinds, so
+    # it gets no kind colour, which falls out of the lookup by itself.
+    table.insert(
+        1,
+        KIND_HEADER,
+        [
+            BASELINE_KIND_LABEL if name == BASELINE_LABEL else kind_label(kind)
+            for name, kind in zip(comparison["scenario"], comparison["kind"])
+        ],
+    )
     position = list(table.columns).index(ALL_IN_HEADER) + 1
     table.insert(
         position,
@@ -859,6 +904,26 @@ def comparison_table(results):
         comparison["total_cost"].astype(float) - baseline_cost,
     )
     return table.sort_values(DIFFERENCE_HEADER).reset_index(drop=True)
+
+
+# SHORT HEADERS, FULL NAMES ON HOVER (Siri, 11/25). Eleven columns of
+# full workbook headers did not fit the page: "Requester turnaround, mean
+# days" alone is wider than the figure under it, and the last column fell
+# off the right-hand edge at 1440 with the sidebar open. The detail table
+# has done this since 7d; this is the same treatment, and the tooltip
+# still leads with the workbook's own header so a reader can find the
+# column on the tab.
+COMPARISON_SHORT = {
+    "All-in cost": "All-in",
+    "All-in vs baseline": "vs base",
+    "Labor cost": "Labor",
+    "Machine cost": "Machine",
+    "Network required FTE": "Req FTE",
+    "Overtime hours": "OT hrs",
+    "Uncovered hours": "Uncov hrs",
+    "Requester turnaround, mean days": "Turnaround",
+    "Weeks over the 5-day goal": "Wks over goal",
+}
 
 
 def comparison_column_specs(table):
@@ -875,11 +940,16 @@ def comparison_column_specs(table):
     for header in table.columns:
         number_format = SCENARIO_FORMATS.get(header)
         note = MEASURE_NOTES.get(header, "")
+        short = COMPARISON_SHORT.get(header, header)
         specs.append(
             {
                 "column": header,
-                "label": header,
-                "help": note,
+                "label": short,
+                # The full workbook header leads the tooltip wherever the
+                # column is shortened, so a reader who wonders what "OT
+                # hrs" is called on the tab can find out without leaving
+                # the page.
+                "help": f"{header}. {note}" if short != header else note,
                 "format": SCREEN_NUMBER_FORMATS.get(number_format, TEXT_COLUMN),
                 "number_format": number_format,
             }
@@ -1843,10 +1913,20 @@ def _rgba(colour, alpha):
     return f"rgba({red}, {green}, {blue}, {alpha})"
 
 
-def live_wash(pair, alpha):
-    """The same pair as a translucent fill, for a panel or a button."""
+def live_wash(pair, alpha, dark_alpha=None):
+    """The same pair as a translucent fill, for a panel or a button.
+
+    TWO ALPHAS, because the same fraction does not read the same over
+    both pages (Siri, 11/25). A 10% violet over cream is a visible
+    tint; the same 10% of a pale violet over charcoal is almost the
+    charcoal, which is why the buttons barely showed a colour in dark
+    mode. Where one number does for both, dark_alpha is left out.
+    """
     light, dark = pair
-    return f"light-dark({_rgba(light, alpha)}, {_rgba(dark, alpha)})"
+    return (
+        f"light-dark({_rgba(light, alpha)}, "
+        f"{_rgba(dark, dark_alpha if dark_alpha is not None else alpha)})"
+    )
 
 
 # THE THREE SCOPE WORDS, measured on 11/24 against both pages. The hues
@@ -1907,18 +1987,39 @@ NOTE_COLOUR = (
 # How much of a hue sits behind a panel or a button. Low, because the
 # word or the label on top of it has to stay the loudest thing there.
 PANEL_ALPHA = 0.12
-BUTTON_ALPHA = 0.10
-HOVER_ALPHA = 0.22
+PANEL_DARK_ALPHA = 0.18
+
+# ONE ALPHA PER BUTTON, not one shared by both (Siri, 11/25). The two
+# have to stand out from the page AND from each other, and they are not
+# equally loud hues: at any shared strength that makes slate visible,
+# violet is already far past it, and the two composited fills sat 14.6
+# apart by delta-E - two muted boxes a reader tells apart by reading the
+# labels.
+#
+# Searched rather than guessed: the lightest pair of alphas where, in
+# BOTH palettes, each fill is at least 22 from its page, the two fills
+# are at least 22 from each other, and the label still clears AA on
+# either. That is violet at 48% and slate at 38% - worst page distance
+# 22.5, worst pair 22.2, worst label 5.6:1 against the 4.5 AA asks.
+#
+# It leaves the main button the louder of the two, which is the order
+# they are in: Excel is the one almost everybody wants.
+EXCEL_FILL_ALPHA = 0.48
+CSV_FILL_ALPHA = 0.38
+
+# Hover adds six points. Not more: at twelve the violet's label fell to
+# 4.4:1 in dark, which is under AA for the one state a reader is looking
+# straight at.
+HOVER_BOOST = 0.06
+
+# The edge is the hue at full strength, and thick enough to see without
+# turning the button into a box of colour.
+BUTTON_EDGE = "2px"
 
 # The lines a table draws itself with. Neutral on purpose: the only
 # colour in a table should be the word that carries a meaning.
 TABLE_LINE = ("#e2dcd2", "#32353a")
 TABLE_HEAD_FILL = ("#f1ece4", "#23262b")
-
-# The pale end of the note panel's text, for the light page where the hue
-# fills the panel instead of washing it.
-NOTE_REVERSED_TEXT = "#f8f9fc"
-
 
 def scope_word_class(region):
     """The CSS class a scope word wears, or none for a scope with no region."""
@@ -1949,10 +2050,14 @@ TABLE_STYLE = """<style>
 .cm-table {{ border-collapse: collapse; width: 100%;
              font-size: 0.8125rem; font-variant-numeric: tabular-nums; }}
 /* STICKY, so the headers stay put the way the grid's did. */
+/* PADDING IS WIDTH (11/25). Seventeen columns at 0.6rem a side ran 79px
+   past the page at 1440 with the sidebar open, which is the sideways
+   scroll the reviewers found on the comparison table. 0.4rem a side
+   gives back 108px and still leaves the figures room to breathe. */
 .cm-table thead th {{ position: sticky; top: 0; z-index: 2;
                       background: {head}; color: inherit;
                       font-weight: 600; text-align: right;
-                      padding: 0.35rem 0.6rem; white-space: nowrap;
+                      padding: 0.35rem 0.4rem; white-space: nowrap;
                       border-bottom: 1px solid {line}; }}
 .cm-table th.cm-left, .cm-table td.cm-left {{ text-align: left; }}
 /* COLOUR: INHERIT on every figure, which is the 11/20 rule written in
@@ -1960,7 +2065,7 @@ TABLE_STYLE = """<style>
    so a cell that sets no colour of its own is right in both palettes for
    nothing. */
 .cm-table td {{ color: inherit; text-align: right;
-                padding: 0.25rem 0.6rem; white-space: nowrap;
+                padding: 0.25rem 0.4rem; white-space: nowrap;
                 border-bottom: 1px solid {line}; }}
 .cm-table tbody tr:last-child td {{ border-bottom: none; }}
 .cm-word {{ font-weight: 700; }}
@@ -2081,12 +2186,12 @@ def kind_class_of():
     return class_of
 
 
-SORT_AS_SHOWN = "The order above"
+SORT_AS_SHOWN = "Default order"
 
 SORT_HELP = (
-    "Which column to order the rows by. The order above is the view's "
-    "own: the detail table arrives by plan week, and the comparison by "
-    "what each run does to the all-in cost."
+    "Which column to order the rows by. Default order is the view's own: "
+    "the detail table arrives by plan week, and the comparison by what "
+    "each run does to the all-in cost."
 )
 
 ORDER_HELP = (
@@ -2123,12 +2228,14 @@ def sorted_view(frame, column=None, descending=False):
 # panel that picked its shade when the script last ran would be wrong the
 # moment they switched.
 #
-# THE NOTE BANNERS ARE THE DARK DESIGN, REVERSED. The reviewers liked the
-# dark one: a wash of the hue behind bright text of the same hue.
-# Reversed for the cream page means the two ends swap - the hue fills the
-# panel and the text goes pale - rather than the washed-out pale blue
-# panel that was there, which is the dark design copied rather than
-# reversed.
+# THE NOTE BANNERS ARE THE DARK DESIGN MIRRORED, which is not the same as
+# inverted (Siri, 11/25). The first attempt read "reversed" as swapping
+# the two ends - the hue filling the panel with pale text on it - and on
+# a cream page that is a solid blue slab that shouts louder than the
+# finding inside it. The mirror of a wash is a wash: the same translucent
+# blue over whichever page is showing, with the text in the blue that
+# reads on that page, and a thin edge to carry the hue. One design, two
+# palettes, nothing shouting.
 # ---------------------------------------------------------------------------
 
 BANNER_STYLE = """<style>
@@ -2147,7 +2254,7 @@ BANNER_STYLE = """<style>
    hue fills the panel and the text is pale, on charcoal the hue washes
    the panel and the text is bright. */
 .cm-note {{ background: {note_fill}; color: {note_text};
-            border-left: 4px solid {note_edge}; }}
+            border-left: 3px solid {note_edge}; }}
 .cm-note a {{ color: inherit; }}
 </style>"""
 
@@ -2158,11 +2265,8 @@ def banner_style():
         synth_fill=live_wash(SYNTHETIC_COLOUR, PANEL_ALPHA),
         synth_edge=live_colour(SYNTHETIC_COLOUR),
         synth_word=live_colour(SYNTHETIC_COLOUR),
-        note_fill=(
-            f"light-dark({NOTE_COLOUR[0]}, "
-            f"{_rgba(NOTE_COLOUR[1], PANEL_ALPHA)})"
-        ),
-        note_text=f"light-dark({NOTE_REVERSED_TEXT}, {NOTE_COLOUR[1]})",
+        note_fill=live_wash(NOTE_COLOUR, PANEL_ALPHA, PANEL_DARK_ALPHA),
+        note_text=live_colour(NOTE_COLOUR),
         note_edge=live_colour(NOTE_COLOUR),
     )
 
@@ -2235,10 +2339,10 @@ DOWNLOAD_STYLE = """<style>
    Reached through the container key Streamlit puts on the element, which
    is the only handle a stylesheet gets on a widget it does not own. */
 .st-key-{excel_key} button {{ background: {excel_fill} !important;
-                              border: 1px solid {excel_edge} !important;
+                              border: {edge_width} solid {excel_edge} !important;
                               color: inherit !important; }}
 .st-key-{csv_key} button {{ background: {csv_fill} !important;
-                            border: 1px solid {csv_edge} !important;
+                            border: {edge_width} solid {csv_edge} !important;
                             color: inherit !important; }}
 .st-key-{excel_key} button:hover {{ background: {excel_hover} !important; }}
 .st-key-{csv_key} button:hover {{ background: {csv_hover} !important; }}
@@ -2252,12 +2356,13 @@ def download_style():
     return DOWNLOAD_STYLE.format(
         excel_key=EXCEL_BUTTON_KEY,
         csv_key=CSV_BUTTON_KEY,
-        excel_fill=live_wash(EXCEL_COLOUR, BUTTON_ALPHA),
+        edge_width=BUTTON_EDGE,
+        excel_fill=live_wash(EXCEL_COLOUR, EXCEL_FILL_ALPHA),
         excel_edge=live_colour(EXCEL_COLOUR),
-        excel_hover=live_wash(EXCEL_COLOUR, HOVER_ALPHA),
-        csv_fill=live_wash(CSV_COLOUR, BUTTON_ALPHA),
+        excel_hover=live_wash(EXCEL_COLOUR, EXCEL_FILL_ALPHA + HOVER_BOOST),
+        csv_fill=live_wash(CSV_COLOUR, CSV_FILL_ALPHA),
         csv_edge=live_colour(CSV_COLOUR),
-        csv_hover=live_wash(CSV_COLOUR, HOVER_ALPHA),
+        csv_hover=live_wash(CSV_COLOUR, CSV_FILL_ALPHA + HOVER_BOOST),
     )
 
 

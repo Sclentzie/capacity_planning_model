@@ -582,10 +582,8 @@ def show_detail(results, key, choice, roles, changes=None):
         )
         excel_name = download.plan_name(key, choice["code"])
         note = (
-            "Both downloads carry the figures at full precision, not the "
-            "rounded ones on screen, what the sidebar is filtered to, and "
-            "SYNTHETIC in the file name - the only label that travels "
-            "with a file."
+            "Downloads include full-precision figures and your current "
+            "filters. SYNTHETIC is in the file name."
         )
     else:
         # A custom run's inputs exist nowhere else, so they travel with
@@ -598,15 +596,13 @@ def show_detail(results, key, choice, roles, changes=None):
         )
         excel_name = download.custom_plan_name(choice["code"])
         note = (
-            "Both downloads carry the figures at full precision and the "
-            "inputs this run changed - a custom run's inputs exist nowhere "
-            "else, so a file without them would be unreadable a week "
-            "later. The Excel file says so in an INPUTS CHANGED section "
-            "above the table; the CSV puts the same lines above the header "
-            "row, starting with # so a reader and pandas both skip them."
+            "Downloads include full-precision figures, your current "
+            "filters, and the inputs you changed - they exist nowhere "
+            "else, so the file carries them. SYNTHETIC is in the file "
+            "name."
         )
-    # The region key sits beside the buttons, where a reader who has just
-    # noticed the tints is already looking.
+    # The scope line sits beside the buttons, where a reader who has just
+    # noticed the coloured words is already looking.
     show_downloads(
         (download.EXCEL_LABEL, excel, excel_name),
         (download.CSV_LABEL, data, name),
@@ -661,16 +657,14 @@ def show_comparison(results):
         (download.CSV_LABEL, views.csv_bytes(table),
          download.comparison_csv_name()),
         help_text=(
-            "The same twenty-one rows as raw data, at full precision and "
-            "under the workbook's own column headers. SYNTHETIC is in the "
-            "file name."
+            "The same rows as raw data, at full precision, under the "
+            "workbook's own column headers and with the model's own role "
+            "codes. SYNTHETIC is in the file name."
         ),
     )
     st.caption(
-        "Both downloads carry every run in the order above, ranked rather "
-        "than alphabetical - the workbook's own Capacity Scenarios tab is "
-        "the alphabetical reference, and it has seventeen columns to this "
-        "view's nine."
+        "Downloads include every run in the order above, ranked rather "
+        "than alphabetical. SYNTHETIC is in the file name."
     )
 
 

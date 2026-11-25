@@ -246,15 +246,31 @@ Every figure is written by the same function the cards use, so one measure
 reads the same wherever it appears.
 
 The two downloads wear two of the scope hues — violet for the formatted Excel
-file, slate for the raw CSV — as a translucent fill and a 1px edge, with the
-label left in the page's own text colour. The **SYNTHETIC** banner is a 12%
-wash of the amber with its lead word in the hue, rather than the filled warning
-block it was, which read as "something is wrong here" when nothing is. The
-run-summary and instruction banners are the dark design *reversed*: on charcoal
-the hue washes the panel and the text is bright, on cream the hue fills the
-panel and the text is pale. And picking a different run scrolls the main column
-back to the top, because a run is a whole page and a reader who was at week 40
-of the table should not land in the middle of the next one.
+file, slate for the raw CSV — as a translucent fill and a 2px edge, with the
+label left in the page's own text colour. The two alphas were searched rather
+than picked: violet at 48% and slate at 38% is the lightest pair where, in both
+palettes, each fill sits at least 22 from its page by delta-E, the two fills
+sit at least 22 from each other, and the label still clears AA on either. They
+are not equally loud hues, so one shared strength left either slate invisible
+or violet shouting. The **SYNTHETIC** banner is a 12% wash of the amber with
+its lead word in the hue, rather than the filled warning block it was, which
+read as "something is wrong here" when nothing is. The run-summary and
+instruction banners are the same design in both palettes: a wash of the blue
+with the text in the blue that reads on that page, and a thin edge. And picking
+a different run scrolls the main column back to the top, because a run is a
+whole page and a reader who was at week 40 of the table should not land in the
+middle of the next one.
+
+Both tables fit the page with no sideways scroll, at 1280, 1440 and 1920, with
+the sidebar open and collapsed. That took short headers with the full workbook
+name on hover — the comparison table's last column read "Requester turnaround,
+mea…" at 1440 — and a fifth of a rem off each cell's padding, which is 108px
+across the detail table's seventeen columns. Money is written with the sign in
+front of the dollar: **-$51,569**, never `$-51,569`, which is not how anybody
+writes money and reads, for a moment, as a dollar amount of minus something.
+And the baseline's **Kind** says *Baseline*, in no colour: its file declares a
+kind like every run, but on a table ranked against the baseline, calling the
+baseline a choice reads as if somebody were proposing it.
 
 Nothing here was eyeballed. Tests recompute every contrast ratio in both
 palettes and hold each to WCAG AA — charcoal on cream is 14.2:1, off-white on
@@ -387,7 +403,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 878 tests, about 82 minutes
+# The validation checks: 885 tests, about 82 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -427,11 +443,11 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-878 tests across 25 files: 877 passing, and 1 that fails on purpose and is
+885 tests across 25 files: 884 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 26th file, `tests/test_live_colours.py`, holds 27 more that drive a real
+A 26th file, `tests/test_live_colours.py`, holds 33 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
 read back the colours actually painted; they check every card on every run
 against what the model says that measure did, card by card, rather than asking

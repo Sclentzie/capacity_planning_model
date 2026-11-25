@@ -375,21 +375,33 @@ def test_the_scope_cell_wears_its_own_region(plan_sheet, view):
 
 
 def test_the_kind_cell_wears_its_own_kind(comparison_sheet, comparison):
-    """Choice, risk and sensitivity, coloured as the Compare-all table is."""
+    """Choice, risk and sensitivity, coloured as the Compare-all table is.
+
+    And the BASELINE ROW IS NOT ONE OF THEM (11/25). It says "Baseline"
+    on screen, because on a table ranked against the baseline it is the
+    line the others are measured from rather than something anybody is
+    proposing - so the downloaded file says the same word and leaves the
+    cell uncoloured, which falls out of the fill lookup rather than
+    being special-cased here.
+    """
     columns = download.comparison_columns(comparison)
     headers = [header for header, *_rest in columns]
     letter = get_column_letter(headers.index(views.KIND_HEADER) + 1)
     start = header_row(comparison_sheet, columns) + 1
 
-    seen = set()
+    seen, baselines = set(), 0
     for offset, kind in enumerate(comparison[views.KIND_HEADER]):
         cell = comparison_sheet[f"{letter}{start + offset}"]
         assert cell.value == kind
-        assert cell.fill.fgColor.rgb.endswith(
-            export.KIND_TINT_COLOURS[kind.lower()]
-        ), kind
+        tint = export.KIND_TINT_COLOURS.get(kind.lower())
+        if tint is None:
+            assert kind == views.BASELINE_KIND_LABEL, kind
+            baselines += 1
+            continue
+        assert cell.fill.fgColor.rgb.endswith(tint), kind
         seen.add(kind.lower())
     assert seen == set(scenarios.KINDS)
+    assert baselines == 1, "exactly one row is the baseline"
 
 
 def test_no_column_is_narrower_than_what_it_holds(

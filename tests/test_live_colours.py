@@ -141,9 +141,17 @@ def set_theme(tab, label):
 
 
 def pick(tab, text):
+    """Choose a radio option, through the DOM.
+
+    node.click() rather than playwright's click, because playwright
+    refuses to click an element outside the viewport and a radio in a
+    long sidebar is often exactly that - which made the width tests, the
+    only ones that move the sidebar and the window together, time out
+    after thirty seconds on an element that was perfectly clickable.
+    """
     for label in tab.query_selector_all('[data-testid="stRadio"] label'):
         if text in label.inner_text():
-            label.click()
+            label.evaluate("node => node.click()")
             tab.wait_for_timeout(2500)
             return
     pytest.fail(f"no radio option matching {text!r}")
@@ -879,15 +887,19 @@ def test_the_synthetic_banner_is_soft_and_still_readable(page, mode, label):
         assert ratio >= views.AA_TEXT, f"{mode}: {ratio:.2f}:1 on {over}"
 
 
-def test_the_note_banner_is_the_dark_design_reversed(page):
-    """The reviewers' fourth fix, stated as the relationship they asked for.
+def test_the_note_banner_is_a_soft_wash_in_both_palettes(page):
+    """The reviewers' fourth fix, as round 2 restated it (Siri, 11/25).
 
-    They liked the dark one - a wash of the hue behind bright text of the
-    same hue - and asked for light to be that design REVERSED. So the two
-    ends have to be opposite: on charcoal the panel is a wash and the
-    text is the hue; on cream the hue fills the panel and the text is
-    pale. Both have to clear AA, which is the part a reversal could
-    quietly cost.
+    Round 1 read "the dark design reversed" as swapping the two ends: on
+    cream the hue filled the panel and the text went pale. On the page
+    that is a solid blue slab that shouts louder than the finding inside
+    it. The mirror of a wash is a wash - the same translucent blue over
+    whichever page is showing, the text in the blue that reads on that
+    page, a thin edge carrying the hue.
+
+    So what is measured is sameness of DESIGN and difference of SHADE:
+    both fills translucent, both texts the hue's own end, both clearing
+    AA against the panel they sit on.
     """
     results = {}
     for mode, label in ((views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark")):
@@ -898,34 +910,29 @@ def test_the_note_banner_is_the_dark_design_reversed(page):
         banner = page.evaluate(BANNERS)["note"]
         results[mode] = banner
 
-        # The light panel is SOLID - that is what the reversal means -
-        # and a solid fill is what the text sits on. The dark one is a
-        # wash, so the page underneath has to be mixed in first.
-        fill = banner["fill"]
-        over = (
-            views.composite_over(fill, background(page))
-            if fill.startswith("rgba(") else as_hex(fill)
+        # A WASH, in both: the page shows through it.
+        assert banner["fill"].startswith("rgba("), f"{mode}: {banner['fill']}"
+        alpha = float(banner["fill"].rstrip(")").split(",")[-1])
+        assert 0 < alpha <= 0.25, f"{mode}: the note panel is not soft: {alpha}"
+
+        # The text is the hue's own end for this palette, not a pale
+        # colour dropped on top of a filled panel.
+        expected = (
+            views.NOTE_COLOUR[0] if mode == views.LIGHT_MODE
+            else views.NOTE_COLOUR[1]
         )
+        assert as_hex(banner["text"]) == expected, (mode, banner["text"])
+        assert as_hex(banner["edge"]) == expected
+
+        over = views.composite_over(banner["fill"], background(page))
         ratio = views.contrast_ratio(as_hex(banner["text"]), over)
         assert ratio >= views.AA_TEXT, f"{mode}: {ratio:.2f}:1 on {over}"
 
+    # One design, two palettes: the shades differ and nothing else does.
     light, dark = results[views.LIGHT_MODE], results[views.DARK_MODE]
-    # Light: the hue fills the panel and the text is pale.
-    assert as_hex(light["fill"]) == views.NOTE_COLOUR[0], light["fill"]
-    assert views.relative_luminance(as_hex(light["text"])) > 0.7, light["text"]
-    # Dark: the panel is a wash and the text is the hue.
-    assert dark["fill"].startswith("rgba("), dark["fill"]
-    assert as_hex(dark["text"]) == views.NOTE_COLOUR[1], dark["text"]
-    # Which is the reversal, stated once: the two fills are at opposite
-    # ends of the lightness range, not two versions of the same panel.
-    assert views.relative_luminance(
-        as_hex(light["fill"])
-    ) < views.relative_luminance(as_hex(light["text"]))
-    assert views.relative_luminance(
-        as_hex(dark["text"])
-    ) > views.relative_luminance(
-        views.composite_over(dark["fill"], views.page_colour(views.DARK_MODE))
-    )
+    assert as_hex(light["text"]) != as_hex(dark["text"])
+    assert light["fill"].startswith("rgba(") and dark["fill"].startswith("rgba(")
+    set_theme(page, "Light")
 
 
 def test_picking_a_run_puts_the_reader_back_at_the_top(page):
@@ -993,3 +1000,217 @@ def test_the_table_header_sticks_and_the_body_scrolls(page):
     # And the header still says what the column is, which is the third
     # thing the grid did.
     assert measured["tooltip"], "a column header lost its tooltip"
+
+
+# ---------------------------------------------------------------------------
+# Round 2 of the screenshot review (Siri, 11/25)
+# ---------------------------------------------------------------------------
+
+# How far a table runs past the box it sits in. Zero is the test: a
+# column a reader has to scroll sideways to reach is a column they will
+# not read.
+TABLE_OVERFLOW = """
+  () => {
+    const wrap = document.querySelector('.cm-table-wrap');
+    if (!wrap) return null;
+    const table = wrap.querySelector('table');
+    return {
+      overflow: wrap.scrollWidth - wrap.clientWidth,
+      wrap: wrap.clientWidth,
+      table: Math.round(table.getBoundingClientRect().width),
+      columns: table.querySelectorAll('thead th').length,
+      last: table.querySelector('thead th:last-child').textContent.trim(),
+    };
+  }
+"""
+
+
+@pytest.mark.parametrize("width", (1440, 1920))
+def test_neither_table_runs_off_the_page(page, width):
+    """THE LAST COLUMN WAS CUT OFF (Siri's screenshots, 11/25).
+
+    "Requester turnaround, mea..." - eleven full workbook headers in a
+    table that had to fit beside an open sidebar at 1440. The headers
+    are short now, with the full name on hover, and the cells lost a
+    fifth of a rem of padding each side.
+
+    Measured as the browser lays it out, at both widths with the sidebar
+    open and collapsed, on BOTH tables: the detail table is the wider of
+    the two at seventeen columns, and a fix for one that broke the other
+    would be no fix.
+    """
+    page.set_viewport_size({"width": width, "height": 1100})
+    page.wait_for_timeout(600)
+    wide = []
+    try:
+        for collapsed in (False, True):
+            assert set_sidebar(page, not collapsed), "could not move the sidebar"
+            where = "collapsed" if collapsed else "open"
+            for view in (views.COMPARE_VIEW, views.ONE_RUN_VIEW):
+                pick(page, view)
+                page.wait_for_selector(".cm-table-wrap", timeout=20000)
+                page.wait_for_timeout(800)
+                measured = page.evaluate(TABLE_OVERFLOW)
+                assert measured, f"{view}: no table on the page"
+                if measured["overflow"] > 0:
+                    wide.append(
+                        f"{width}px {where} / {view}: {measured['columns']} "
+                        f"columns run {measured['overflow']}px past the page "
+                        f"(table {measured['table']}, box {measured['wrap']}), "
+                        f"last column {measured['last']!r}"
+                    )
+    finally:
+        set_sidebar(page, True)
+        pick(page, views.ONE_RUN_VIEW)
+    assert not wide, "\n".join(wide)
+
+
+# Each download button as the browser painted it.
+PAINTED_BUTTONS = """
+  () => {
+    const out = {};
+    for (const key of ['%s', '%s']) {
+      const host = document.querySelector('.st-key-' + key + ' button');
+      if (!host) continue;
+      const style = getComputedStyle(host);
+      out[key] = {fill: style.backgroundColor, edge: style.borderTopColor,
+                  width: style.borderTopWidth, text: style.color};
+    }
+    return out;
+  }
+""" % (views.EXCEL_BUTTON_KEY, views.CSV_BUTTON_KEY)
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_both_downloads_read_as_coloured_in_this_palette(page, mode, label):
+    """DARK MODE BARELY SHOWED A COLOUR (Siri's screenshots, 11/25).
+
+    The fills were one alpha used for both palettes, and the same
+    fraction does not read the same over both pages. This measures what
+    was actually painted - the fill composited over the real page - and
+    holds each button a measurable distance from the page it sits on,
+    which is the thing "stands out" means.
+
+    Slate is the test. Violet is the louder hue and was never the one in
+    doubt.
+    """
+    set_theme(page, label)
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector(f".st-key-{views.EXCEL_BUTTON_KEY} button",
+                           timeout=20000)
+    buttons = page.evaluate(PAINTED_BUTTONS)
+    assert set(buttons) == {views.EXCEL_BUTTON_KEY, views.CSV_BUTTON_KEY}
+
+    page_colour = background(page)
+    for key, pair in ((views.EXCEL_BUTTON_KEY, views.EXCEL_COLOUR),
+                      (views.CSV_BUTTON_KEY, views.CSV_COLOUR)):
+        button = buttons[key]
+        over = views.composite_over(button["fill"], page_colour)
+        apart = views.colour_distance(over, page_colour)
+        assert apart >= views.DIFFERENT, (
+            f"{mode}: {key} is only {apart:.1f} from the page it sits on"
+        )
+        # The edge is the hue at full strength, and thick enough to see.
+        expected = pair[0] if mode == views.LIGHT_MODE else pair[1]
+        assert as_hex(button["edge"]) == expected, (key, button["edge"])
+        assert float(button["width"].rstrip("px")) >= 2.0, button["width"]
+        # And the label still reads on the stronger fill.
+        ratio = views.contrast_ratio(as_hex(button["text"]), over)
+        assert ratio >= views.AA_TEXT, f"{mode}: {key} label {ratio:.2f}:1"
+
+    # The two are still told apart from each other, not just from the page.
+    excel = views.composite_over(
+        buttons[views.EXCEL_BUTTON_KEY]["fill"], page_colour)
+    csv = views.composite_over(
+        buttons[views.CSV_BUTTON_KEY]["fill"], page_colour)
+    assert views.colour_distance(excel, csv) >= views.DIFFERENT, (excel, csv)
+
+
+# Every card's change line and every card's label, as drawn.
+CARD_ROWS = """
+  () => Array.from(document.querySelectorAll('[class*="st-key-cmcard"]'))
+    .map(card => {
+      const label = card.querySelector('.cm-card-label');
+      const delta = card.querySelector('[data-testid="stMarkdownContainer"] p');
+      if (!label || !delta) return null;
+      const lb = label.getBoundingClientRect();
+      const db = delta.getBoundingClientRect();
+      return {label: label.textContent.trim(),
+              delta: delta.textContent.trim(),
+              label_top: lb.top, label_left: lb.left,
+              delta_bottom: db.bottom, delta_left: db.left};
+    }).filter(Boolean)
+"""
+
+# How much room a change line must leave under it before the next card's
+# label starts. Six pixels is the test; the stylesheet asks for about
+# seventeen.
+CARD_ROOM = 6.0
+
+
+def test_a_change_line_does_not_crowd_the_next_card(page):
+    """The six cards are two rows of three (Siri's screenshots, 11/25).
+
+    The change line had no margin under it, so the first row's change
+    line sat straight on top of the second row's label - two different
+    cards' text reading as one block, with the second card's measure
+    looking like a continuation of the first card's verdict.
+
+    Measured per COLUMN, because that is where the crowding is: the card
+    below is the one in the same column, and comparing a line to the
+    label beside it would measure nothing.
+    """
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)
+    pick(page, BETTER_RUN)
+    page.wait_for_timeout(1500)
+    cards = page.evaluate(CARD_ROWS)
+    assert len(cards) >= 6, cards
+
+    tight = []
+    for card in cards:
+        below = [
+            other for other in cards
+            if abs(other["label_left"] - card["delta_left"]) < 40
+            and other["label_top"] > card["delta_bottom"] - 1
+        ]
+        if not below:
+            continue
+        nearest = min(below, key=lambda other: other["label_top"])
+        room = nearest["label_top"] - card["delta_bottom"]
+        if room < CARD_ROOM:
+            tight.append(
+                f"{card['label']}: {card['delta']!r} leaves {room:.1f}px "
+                f"above {nearest['label']!r}"
+            )
+    assert not tight, "\n".join(tight)
+
+
+def test_no_figure_on_the_page_writes_the_dollar_before_the_sign(page):
+    """-$51,569 and never $-51,569, in the browser this time (11/25).
+
+    The headless test reads the markup the page sent. This one reads the
+    text the browser drew, in both palettes and in the view where the
+    negatives are - which is the one a reviewer was looking at.
+    """
+    for label in ("Light", "Dark"):
+        set_theme(page, label)
+        for view in (views.COMPARE_VIEW, views.ONE_RUN_VIEW):
+            pick(page, view)
+            page.wait_for_timeout(1200)
+            text = page.evaluate(
+                "() => document.querySelector('[data-testid=\"stMain\"]')"
+                ".innerText"
+            )
+            assert "$-" not in text, f"{label}/{view}: a dollar before a sign"
+        # And a negative really is on screen, or this proves nothing.
+        pick(page, views.COMPARE_VIEW)
+        page.wait_for_timeout(1000)
+        shown = page.evaluate(
+            "() => document.querySelector('[data-testid=\"stMain\"]').innerText"
+        )
+        assert "-$" in shown, f"{label}: no negative amount on the page"
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)

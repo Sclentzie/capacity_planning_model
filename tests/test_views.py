@@ -403,9 +403,14 @@ def test_the_comparison_view_shows_each_run_s_kind(results):
     assert kind_of["Volume +15%"] == "Risk"
     assert kind_of["Centralized phones"] == "Choice"
     assert kind_of["AI and automation, 50%"] == "Sensitivity"
-    assert set(table[views.KIND_HEADER]) <= {
-        views.kind_label(kind) for kind in scenarios.KINDS
-    }
+    # The three kinds, plus the baseline, which is named rather than
+    # classified (11/25) because it is the line the others are measured
+    # from and not something anybody is proposing.
+    assert set(table[views.KIND_HEADER]) <= (
+        {views.kind_label(kind) for kind in scenarios.KINDS}
+        | {views.BASELINE_KIND_LABEL}
+    )
+    assert kind_of[views.BASELINE_LABEL] == views.BASELINE_KIND_LABEL
 
 
 def test_the_comparison_view_carries_the_workbook_s_headers(results):
@@ -1334,7 +1339,10 @@ def test_every_comparison_column_says_what_its_measure_is(results):
     table = views.comparison_table(results)
     for spec in views.comparison_column_specs(table):
         assert spec["help"], f"{spec['column']}: no note"
-        assert spec["help"] == views.MEASURE_NOTES[spec["column"]]
+        # The measure's own sentence, with the workbook's header in front
+        # of it wherever the column had to be shortened to fit the page
+        # (11/25) - so the note is the same sentence either way.
+        assert spec["help"].endswith(views.MEASURE_NOTES[spec["column"]])
     assert views.KIND_HEADER in views.MEASURE_NOTES
     assert views.DIFFERENCE_HEADER in views.MEASURE_NOTES
 
@@ -1343,11 +1351,12 @@ def test_every_comparison_column_says_what_its_measure_is(results):
         card for card in views.headline_cards(results, "volume_plus_15")
         if card["label"] == views.ALL_IN_HEADER
     )
-    note = next(
+    note = views.MEASURE_NOTES[views.ALL_IN_HEADER]
+    assert note in views.card_tooltip(cost)
+    assert note in next(
         spec["help"] for spec in views.comparison_column_specs(table)
         if spec["column"] == views.ALL_IN_HEADER
     )
-    assert note in views.card_tooltip(cost)
 
 
 def test_every_plan_column_says_what_it_is(results):
@@ -2753,3 +2762,246 @@ def test_every_colour_the_page_draws_itself_with_goes_out_as_a_pair():
     assert views.live_colour(views.SYNTHETIC_COLOUR) in sheets["banner"]
     for region, pair in views.SCOPE_WORD_COLOURS.items():
         assert views.live_colour(pair) in sheets["table"], region
+
+
+# ---------------------------------------------------------------------------
+# Round 2 of the screenshot review (Siri, 11/25)
+# ---------------------------------------------------------------------------
+
+
+def test_a_negative_amount_puts_the_sign_before_the_dollar():
+    """-$51,569, never $-51,569 (Siri, 11/25).
+
+    "$-51,569" is not how anybody writes money, and for the moment it
+    takes to read it, it is a dollar amount of minus something. The sign
+    belongs to the quantity, so it comes first - the same way the cards
+    have always written a difference.
+    """
+    assert views.money(-51568.94) == "-$51,569"
+    assert views.money(51568.94) == "$51,569"
+    assert views.money(-51568.94, 2) == "-$51,568.94"
+    # A figure that rounds to nothing gets no minus sign: a zero with a
+    # sign on it is a rounding artefact wearing a direction.
+    assert views.money(-0.4) == "$0"
+    assert views.money(0.0) == "$0"
+
+    for number_format in (export.MONEY, export.MONEY_CENTS):
+        assert views.format_value(-1234.5, number_format).startswith("-$")
+        assert "$-" not in views.format_value(-1234.5, number_format)
+
+
+def test_no_figure_anywhere_on_the_page_reads_dollar_minus():
+    """The property, on the real page, in every view that shows money.
+
+    The comparison table is where it showed - its "vs base" column is
+    negative for every run that saves anything - but the rule is about
+    the page, so the page is what is checked.
+    """
+    for view in (views.ONE_RUN_VIEW, views.COMPARE_VIEW):
+        app = app_test().run()
+        if view != views.ONE_RUN_VIEW:
+            view_picker(app).set_value(view).run()
+        assert not app.exception, view
+        markup = page_html(app)
+        assert "$-" not in markup, f"{view} writes a dollar before the sign"
+        assert "$ -" not in markup, view
+
+    # And the figures really are negative, or this passes for the wrong
+    # reason: the ranked table opens with the biggest saving.
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    rows = table_rows(page_html(app))
+    at = [spec["column"] for spec in views.comparison_column_specs(
+        views.comparison_table(api.load_results())
+    )].index(views.DIFFERENCE_HEADER)
+    assert rows[0][at].startswith("-$"), rows[0][at]
+
+
+def test_the_comparison_headers_are_short_with_the_full_name_on_hover():
+    """Eleven full workbook headers did not fit the page (Siri, 11/25).
+
+    The last column was cut off at 1440 with the sidebar open, so the
+    headers are shortened the way the detail table's have been since 7d.
+    What matters is that nothing is LOST by shortening: every shortened
+    header still carries the workbook's own name at the front of its
+    tooltip, so a reader can find the column on the tab.
+    """
+    table = views.comparison_table(api.load_results())
+    specs = views.comparison_column_specs(table)
+    for spec in specs:
+        assert len(spec["label"]) <= 14, spec["label"]
+        if spec["label"] != spec["column"]:
+            assert spec["help"].startswith(spec["column"]), spec["column"]
+        assert spec["help"], spec["column"]
+
+    # Every column of the table has a spec, and every shortened name is
+    # read out of the one table rather than invented twice.
+    assert [spec["column"] for spec in specs] == list(table.columns)
+    for header, short in views.COMPARISON_SHORT.items():
+        assert header in table.columns, header
+        assert short != header
+
+    # On the page, the headers are the short ones and the tooltips the
+    # long ones.
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    headers = dict(table_headers(page_html(app)))
+    assert "Turnaround" in headers
+    assert headers["Turnaround"].startswith("Requester turnaround, mean days")
+
+
+def test_the_baseline_is_named_rather_than_classified(results):
+    """The baseline's Kind reads "Baseline", in no colour (Siri, 11/25).
+
+    Its file declares a kind because every run must, but on a table
+    ranked AGAINST the baseline, calling the baseline a choice reads as
+    if somebody were proposing it. It is the line the others are
+    measured from, so it is named - and it takes no kind colour, which
+    falls out of the lookup rather than being special-cased in the CSS.
+    """
+    table = views.comparison_table(results)
+    kinds = dict(zip(table["Scenario"], table[views.KIND_HEADER]))
+    assert kinds[views.BASELINE_LABEL] == views.BASELINE_KIND_LABEL
+    assert views.BASELINE_KIND_LABEL not in [
+        views.kind_label(kind) for kind in scenarios.KINDS
+    ]
+    assert views.kind_class_of()(views.BASELINE_KIND_LABEL) is None
+
+    # Every other run still declares one of the three kinds.
+    for name, kind in kinds.items():
+        if name == views.BASELINE_LABEL:
+            continue
+        assert kind in [views.kind_label(one) for one in scenarios.KINDS], name
+
+    # And on the page, the baseline's cell carries no kind class.
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    markup = page_html(app)
+    body = markup[markup.index("<tbody>"):]
+    row = next(
+        line for line in re.findall(r"<tr>(.*?)</tr>", body, re.S)
+        if f">{views.BASELINE_LABEL}<" in line
+    )
+    assert "cm-kind-" not in row, "the baseline row is coloured as a kind"
+    assert views.BASELINE_KIND_LABEL in row
+
+
+def test_both_downloads_are_strong_enough_to_see_in_either_palette():
+    """Dark mode barely showed a colour at all (Siri, 11/25).
+
+    The same fraction of a hue does not read the same over both pages: a
+    10% violet over cream is a visible tint, and 10% of a pale violet
+    over charcoal is almost the charcoal. So the fill takes two alphas,
+    and the dark one is the stronger.
+
+    Checked by compositing, which is what the browser does: each fill is
+    mixed over its own page and has to land a measurable distance from
+    it. The browser test measures the painted pixels; this one says what
+    the stylesheet is asking for.
+    """
+    # ONE ALPHA PER BUTTON, and the louder hue takes the lower of the
+    # two: they are not equally loud, so one shared strength leaves
+    # either slate invisible or violet shouting.
+    assert views.EXCEL_FILL_ALPHA != views.CSV_FILL_ALPHA
+    assert views.HOVER_BOOST > 0
+
+    def over(pair, mode, alpha):
+        shade = pair[0] if mode == views.LIGHT_MODE else pair[1]
+        return views.composite_over(
+            f"rgba({', '.join(str(part) for part in views._parts(shade))}"
+            f", {alpha})",
+            views.page_colour(mode),
+        )
+
+    for mode in views.MODES:
+        page = views.page_colour(mode)
+        excel = over(views.EXCEL_COLOUR, mode, views.EXCEL_FILL_ALPHA)
+        csv = over(views.CSV_COLOUR, mode, views.CSV_FILL_ALPHA)
+        # Each stands out from the page it sits on...
+        for name, fill in (("excel", excel), ("csv", csv)):
+            apart = views.colour_distance(fill, page)
+            assert apart >= views.DIFFERENT, (
+                f"{mode}: the {name} fill is only {apart:.1f} from the page"
+            )
+            ratio = views.contrast_ratio(views.text_colour(mode), fill)
+            assert ratio >= views.AA_TEXT, f"{mode}: {name} label {ratio:.2f}:1"
+        # ...and from each other, which is the half that failed first.
+        assert views.colour_distance(excel, csv) >= views.DIFFERENT, (
+            f"{mode}: the two buttons are "
+            f"{views.colour_distance(excel, csv):.1f} apart"
+        )
+        # Hover is stronger and still readable - the one state a reader
+        # is looking straight at.
+        for pair, alpha in (
+            (views.EXCEL_COLOUR, views.EXCEL_FILL_ALPHA),
+            (views.CSV_COLOUR, views.CSV_FILL_ALPHA),
+        ):
+            hovered = over(pair, mode, alpha + views.HOVER_BOOST)
+            assert views.colour_distance(hovered, page) > views.colour_distance(
+                over(pair, mode, alpha), page
+            )
+            assert views.contrast_ratio(
+                views.text_colour(mode), hovered
+            ) >= views.AA_TEXT, f"{mode}: hover label"
+
+    sheet = views.download_style()
+    assert views.BUTTON_EDGE in sheet
+    assert str(views.EXCEL_FILL_ALPHA) in sheet
+    assert str(views.CSV_FILL_ALPHA) in sheet
+
+
+def test_the_note_banner_is_a_wash_in_both_palettes():
+    """The soft MIRROR of the dark design, not its inverse (Siri, 11/25).
+
+    The first attempt read "reversed" as swapping the two ends, which on
+    a cream page is a solid blue slab with white text - louder than the
+    finding inside it. A mirror keeps the design and changes only what
+    has to change: the same translucent blue over whichever page is
+    showing, the text in the blue that reads on that page, a thin edge.
+    """
+    sheet = views.banner_style()
+    assert views.live_wash(
+        views.NOTE_COLOUR, views.PANEL_ALPHA, views.PANEL_DARK_ALPHA
+    ) in sheet, "the note panel is not a wash in both palettes"
+    assert views.live_colour(views.NOTE_COLOUR) in sheet
+    assert "3px solid" in sheet, "the note edge is not thin"
+    # No pale text colour left behind from the inverted version.
+    assert "#f8f9fc" not in sheet
+    assert not hasattr(views, "NOTE_REVERSED_TEXT")
+
+    # Readable both ways, composited the way the browser will.
+    for mode, shade in zip(views.MODES, views.NOTE_COLOUR):
+        alpha = (
+            views.PANEL_ALPHA if mode == views.LIGHT_MODE
+            else views.PANEL_DARK_ALPHA
+        )
+        page = views.page_colour(mode)
+        over = views.composite_over(
+            f"rgba({', '.join(str(part) for part in views._parts(shade))}"
+            f", {alpha})",
+            page,
+        )
+        ratio = views.contrast_ratio(shade, over)
+        assert ratio >= views.AA_TEXT, f"{mode}: {ratio:.2f}:1"
+
+
+def test_the_sort_control_and_the_download_note_say_it_plainly():
+    """Wording (Siri, 11/25): "Default order", and a caption in plain words."""
+    assert views.SORT_AS_SHOWN == "Default order"
+    assert views.sort_options(views.plan_column_specs())[0] == "Default order"
+    assert "Default order" in views.SORT_HELP
+
+    app = app_test().run()
+    sorter = next(box for box in app.selectbox if box.label == "Sort by")
+    assert sorter.value == "Default order"
+
+    captions = [str(caption.value) for caption in app.caption]
+    note = next(
+        caption for caption in captions if "SYNTHETIC is in the file name"
+        in caption
+    )
+    assert "full-precision" in note
+    assert "current filters" in note
+    # Short enough to be read at a glance, which is the point of the
+    # rewrite: the sentence it replaced ran to 34 words.
+    assert len(note.split()) <= 20, note
