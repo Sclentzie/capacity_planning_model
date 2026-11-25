@@ -214,34 +214,47 @@ colour this code chose from the mode was right when it was chosen and wrong the
 moment the reader switched — a dark green left on a charcoal page at 1.4:1,
 which is no colour at all, with nothing raising and nothing to notice until the
 next rerun. Everything coloured here is therefore built so that it has no mode
-to get wrong. A card's difference and a run's kind are sent as a colour *name*
-and Streamlit resolves it in the browser on every repaint; a scope tint and a
-kind's table cell are translucent washes the browser composites against
-whichever page is showing. Red, green and blue are still reserved for the cards
-— better, worse, no change — so nothing else uses them, and the kinds stay
-violet, orange and gray.
+to get wrong, by one of three mechanisms. A card's difference and a run's kind
+in the sidebar are sent as a colour *name* and Streamlit resolves it in the
+browser on every repaint. The workbook's scope and kind fills are translucent
+washes, mixed down onto the cream page because a spreadsheet has no
+transparency. And everything this page draws itself — the tables, the banners,
+the download buttons — goes out as a CSS `light-dark(light, dark)` **pair**, so
+both shades reach the browser and the browser picks. Red, green and blue stay
+reserved for the cards — better, worse, no change — so nothing else uses them.
 
-The detail table tints the **Scope cell** (not the whole row: seventeen tinted
-columns is a lot of colour for one fact, and it reads as a verdict on the row
-rather than a label on its scope) — amber for the North cluster, violet for the
-South, slate for the back office, with a key beside the download button. Those
-three are the one set of colours here that is *not* chosen per mode, and the
-reason is a bug worth knowing about. Switching Light/Dark in Streamlit's menu
-re-themes the browser **without rerunning the script**: the page repaints, the
-Python that picked a colour from the mode never runs again, and so a hex it
-chose stays on screen after the reader has switched away from it — a pale sand
-under off-white text, at about 1.2:1, until something else happens to cause a
-rerun. So each region is one translucent wash instead (`rgba(214, 150, 30,
-0.3)` and friends) and the Scope cell sets no text colour at all. The browser
-composites the wash against whatever the page background is on every repaint
-and leaves the words in whatever colour it is currently painting text, so both
-halves follow the reader with no help from this code. Composited, the three
-regions land further apart than the solid tints they replaced (worst pair 18.5
-against 10.4 by delta-E) and the body text clears AA on all six backgrounds by
-at least 8.3:1. The comparison view's **Kind cell** is washed the same way, for
-a different reason: the dataframe draws its cells on a canvas and renders no
-markdown in them, so the colour name that works everywhere else cannot reach a
-cell there.
+The **Scope** and **Kind** columns are coloured bold words (outside reviewers,
+24 November). A word needs a text colour, and one text colour cannot serve both
+pages: readable text needs 4.5:1, which caps a colour at about 0.17 relative
+luminance on the cream page and demands at least 0.20 on the charcoal one, so
+there is no single hex in between. `light-dark()` resolves that, because
+Streamlit sets `color-scheme` on the app element and flips it on a menu switch
+with no rerun — measured in a real browser, not assumed. The scope hues are the
+ones the workbook already tints a scope cell with: amber for the North cluster
+(6.2:1 light, 9.5:1 dark), violet for the South (8.1 and 6.8), slate for the
+back office (6.9 and 8.2), at least 44.8 apart by CIE delta-E. One line under
+the table says what the three words mean, in the same three colours, and it
+replaced the two keys with swatches that used to explain a colour that no
+longer exists.
+
+Those tables are therefore the page's own HTML rather than `st.dataframe`,
+because the grid paints its cells on a canvas where no CSS and no markdown can
+reach. CSS gives back the sticky header, the scrolling body and a tooltip on
+every column header; what it cannot give back is sorting by clicking a header,
+so there is a **Sort by** control and a high-to-low toggle above each table.
+Every figure is written by the same function the cards use, so one measure
+reads the same wherever it appears.
+
+The two downloads wear two of the scope hues — violet for the formatted Excel
+file, slate for the raw CSV — as a translucent fill and a 1px edge, with the
+label left in the page's own text colour. The **SYNTHETIC** banner is a 12%
+wash of the amber with its lead word in the hue, rather than the filled warning
+block it was, which read as "something is wrong here" when nothing is. The
+run-summary and instruction banners are the dark design *reversed*: on charcoal
+the hue washes the panel and the text is bright, on cream the hue fills the
+panel and the text is pale. And picking a different run scrolls the main column
+back to the top, because a run is a whole page and a reader who was at week 40
+of the table should not land in the middle of the next one.
 
 Nothing here was eyeballed. Tests recompute every contrast ratio in both
 palettes and hold each to WCAG AA — charcoal on cream is 14.2:1, off-white on
@@ -290,7 +303,7 @@ deliberately, since they are never on screen together.
 
 One pair is still open: the no-change blue against the teal accent in dark
 mode, 32.8, recorded as a deliberately failing test rather than written off.
-The tints are a thing done to the screen; the CSV is the same bytes it always
+A colour is a thing done to the screen; the CSV is the same bytes it always
 was. **The workbook wears the same palette** as of 11/23: its header rows are
 the page's own teal in white bold rather than the navy they were, which was a
 colour that appeared nowhere on the page; a row's Scope cell carries its
@@ -308,8 +321,9 @@ every run and the workbook names sensitivity runs in italics, both reading the
 same declared field — a sensitivity read as a proposal is how a finding gets
 quoted as something it never said. Each kind carries its own colour —
 **violet** for a choice, **orange** for a risk, **gray** for a sensitivity — as
-a coloured word beside every run, and as a wash behind the word in the
-comparison table and its key.
+a coloured word beside every run in the sidebar, and as the same word in the
+comparison table's Kind column, in the same shade: one colour reached two ways,
+by Streamlit's markdown in the sidebar and by a CSS pair in the table.
 
 Each headline card is read one way: **green** moved the way a planner wants,
 **red** moved the other way, **blue** did not move at all. All six measures are
@@ -373,7 +387,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 874 tests, about 82 minutes
+# The validation checks: 878 tests, about 82 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -413,17 +427,22 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-874 tests across 25 files: 873 passing, and 1 that fails on purpose and is
+878 tests across 25 files: 877 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 26th file, `tests/test_live_colours.py`, holds 16 more that drive a real
+A 26th file, `tests/test_live_colours.py`, holds 27 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
 read back the colours actually painted; they check every card on every run
 against what the model says that measure did, card by card, rather than asking
 only whether a colour appears on the page somewhere; and they measure the
 layout, since a number that covers its own change line is not something a
-stylesheet can be read to rule out. They need playwright, which is
+stylesheet can be read to rule out. Since 24 November they also read back every
+coloured word, both download buttons and both banners in each palette and
+across a switch, and they measure the scroll position after a run is picked —
+three of the fixes that day were only visible in a browser, including a
+stylesheet that silently never arrived and a scroll that ran once per session
+and then stopped. They need playwright, which is
 deliberately not in `requirements.txt`, so they skip themselves when it is
 absent — the file says how to run them. They exist because every other test
 here asks Python what colour something is, and the bug they were written for

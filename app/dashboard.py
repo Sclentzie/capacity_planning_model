@@ -25,6 +25,7 @@ Run it:
     .venv\\Scripts\\python -m streamlit run app/dashboard.py
 """
 
+import re
 import sys
 from datetime import time
 from pathlib import Path
@@ -120,6 +121,51 @@ def current_inputs():
     return api.inputs_fingerprint()
 
 
+def page_styles():
+    """Every stylesheet this page draws itself with, once per rerun.
+
+    Built in views from recorded colour pairs, and sent as light-dark()
+    so the browser picks the shade on every repaint. Nothing here knows
+    which palette is showing, which is the 11/20 rule and still holds.
+    """
+    sheets = (
+        views.collapse_style(), views.table_style(), views.banner_style(),
+        views.download_style(),
+    )
+    # st.html AND NOT st.markdown, which is not a style preference (11/24).
+    # st.markdown runs its argument through markdown first, and a markdown
+    # HTML block ENDS at the line holding its closing tag - so four sheets
+    # joined together put "</style><style>" on one line, ended the block
+    # there, and the rest arrived as text with its tags stripped. Nothing
+    # raised: the page simply had no stylesheet, which is how it was found
+    # (in a browser, reading back the colour of a word that should have
+    # been amber and was the body text instead).
+    with st.container(key=views.STYLE_KEY):
+        st.html("\n".join(sheets))
+
+
+def sort_controls(specs, prefix):
+    """The control that replaced clicking a column header (11/24).
+
+    An HTML table cannot sort itself - that was the grid's one trick
+    this page gives up - so the sort happens in pandas and the table is
+    written again. Two small widgets rather than one, because "by which
+    column" and "which end first" are two questions, and a reader who
+    wants the worst weeks first should not have to know that sorting
+    descending is a second click on the same header.
+    """
+    left, right = st.columns([3, 3], vertical_alignment="bottom")
+    column = left.selectbox(
+        "Sort by", views.sort_options(specs), key=f"{prefix}-sort",
+        help=views.SORT_HELP,
+    )
+    descending = right.toggle(
+        "High to low", key=f"{prefix}-order", help=views.ORDER_HELP,
+        disabled=column == views.SORT_AS_SHOWN,
+    )
+    return column, descending
+
+
 def show_intro(results, dimensions):
     """The three lines a visitor reads before anything else (7d).
 
@@ -138,7 +184,14 @@ def synthetic_banner(meta):
     repository it came from, and whoever sees the screenshot has to be
     able to tell that Northbrook Records Services is invented.
     """
-    st.warning(meta["label"], icon=":material/science:")
+    # NOT st.warning ANY MORE (reviewers, 11/24). Streamlit's warning
+    # is a filled yellow block that reads as "something is wrong here",
+    # and nothing is wrong: the page is doing what it says. This is the
+    # same statement in the amber the scope words use, as a wash with an
+    # edge, with SYNTHETIC itself as the coloured lead.
+    st.markdown(
+        views.synthetic_banner_html(meta["label"]), unsafe_allow_html=True
+    )
 
 
 def staleness_banner(meta):
@@ -200,6 +253,59 @@ def pick_run(results):
     )
 
 
+LAST_RUN_KEY = "last-run-shown"
+
+
+def scroll_to_top(key):
+    """Put the reader back at the top when they pick a different run.
+
+    A RUN IS A WHOLE PAGE (reviewers, 11/24). Picking one from the
+    sidebar rewrites everything in the main column, but the main column
+    keeps whatever scroll position the last run was being read at - so a
+    reader who was looking at week 40 of the detail table picks a new
+    run and lands in the middle of a table, with the name of the run
+    they just chose off the top of the screen.
+
+    Streamlit has no scroll API, so this is an iframe of a single
+    collapsed pixel whose script scrolls the parent document's main
+    element. THAT element and not the window, because Streamlit scrolls
+    the main block and the window itself never moves - measured in the
+    browser on 11/24.
+
+    Only on a CHANGE, remembered in session state: scrolling on every
+    rerun would yank the page back every time a filter moved.
+
+    THE RUN'S NAME IS IN THE SCRIPT, and it is not decoration. An iframe
+    whose srcdoc is unchanged is the same DOM node after a rerun, and the
+    browser does not re-run a script it has already run - so with one
+    fixed script this worked exactly once per session and then silently
+    stopped. Naming the run makes each rerun's srcdoc different, so the
+    frame really is reloaded. Found in a browser, because nothing about
+    it fails in Python.
+    """
+    first_visit = LAST_RUN_KEY not in st.session_state
+    if st.session_state.get(LAST_RUN_KEY) == key and not first_visit:
+        return
+    st.session_state[LAST_RUN_KEY] = key
+    if first_visit:
+        # Nothing to scroll back from on the first render, and an iframe
+        # nobody needs is still an element on the page.
+        return
+    # Letters, digits and underscores only: a scenario key is already
+    # one of those, and a key that was not cannot become script.
+    safe = re.sub(r"\W", "", str(key))
+    with st.container(key=views.SCROLL_KEY):
+        st.iframe(
+            f"""<script>
+            /* run: {safe} */
+            const doc = window.parent.document;
+            const main = doc.querySelector('[data-testid="stMain"]');
+            if (main) {{ main.scrollTo({{top: 0, behavior: 'instant'}}); }}
+            </script>""",
+            height=1,
+        )
+
+
 def pick_filters(dimensions):
     """The sidebar filters: one scope grain, then the roles inside it."""
     st.sidebar.subheader("What to look at")
@@ -246,7 +352,10 @@ def show_run_header(entry):
         # The workbook's own approved sentence for this run. A difference
         # column says a scenario is cheaper; only the finding says what
         # the cheapness cost.
-        st.info(entry["finding"], icon=":material/lightbulb:")
+        st.markdown(
+            views.banner_html(entry["finding"], "note", lead="Finding"),
+            unsafe_allow_html=True,
+        )
 
 
 def show_cards(results, key):
@@ -330,46 +439,6 @@ def show_charts(results, key, choice, roles):
     )
 
 
-def comparison_column_config(table):
-    """The comparison table's columns as Streamlit column settings.
-
-    Same two jobs as plan_column_config: the figures are written the way
-    the cards write them, and every column carries its measure's own
-    plain-language note. Decided in views as plain data, so a test can
-    read both without starting a page.
-    """
-    config = {}
-    for spec in views.comparison_column_specs(table):
-        shared = {"label": spec["label"], "help": spec["help"]}
-        if spec["format"] == views.TEXT_COLUMN:
-            config[spec["column"]] = st.column_config.TextColumn(**shared)
-        else:
-            config[spec["column"]] = st.column_config.NumberColumn(
-                format=spec["format"], **shared
-            )
-    return config
-
-
-def plan_column_config():
-    """The Capacity Plan columns as Streamlit column settings.
-
-    The widths, the short headers and the tooltips are decided in views,
-    as plain data, so a test can check that the table fits the page
-    without starting one. All this does is put them in the shapes
-    Streamlit wants.
-    """
-    config = {}
-    for spec in views.plan_column_specs():
-        shared = {"label": spec["label"], "width": spec["width"], "help": spec["help"]}
-        if spec["format"] == views.TEXT_COLUMN:
-            config[spec["column"]] = st.column_config.TextColumn(**shared)
-        else:
-            config[spec["column"]] = st.column_config.NumberColumn(
-                format=spec["format"], **shared
-            )
-    return config
-
-
 EXCEL_HELP = (
     "The rows above as an Excel file, formatted the way the workbook is: "
     "the same headers, the same number formats, a frozen header row and "
@@ -424,30 +493,37 @@ def show_downloads(excel, csv, help_text=CSV_HELP, legend=None):
     """
     widths = [2, 2, 4] if legend is not None else [1, 1]
     columns = st.columns(widths, vertical_alignment="center")
+    # EACH IN ITS OWN KEYED CONTAINER (11/24). Streamlit puts the key on
+    # the element as a class, and that class is the only handle a
+    # stylesheet gets on a widget it does not own - which is how each
+    # button wears its own hue instead of Streamlit's primary blue and
+    # secondary gray. Both are "secondary", so nothing underneath is
+    # fighting the colour on top.
     label, data, name = excel
-    columns[0].download_button(
-        label,
-        data=data,
-        file_name=name,
-        mime=download.EXCEL_MIME,
-        help=EXCEL_HELP,
-        icon=":material/download:",
-        type="primary",
-        width="stretch",
-    )
+    with columns[0].container(key=views.EXCEL_BUTTON_KEY):
+        st.download_button(
+            label,
+            data=data,
+            file_name=name,
+            mime=download.EXCEL_MIME,
+            help=EXCEL_HELP,
+            icon=":material/download:",
+            type="secondary",
+            width="stretch",
+        )
     label, data, name = csv
-    columns[1].download_button(
-        label,
-        data=data,
-        file_name=name,
-        mime="text/csv",
-        help=help_text,
-        icon=":material/download:",
-        type="secondary",
-        width="stretch",
-    )
+    with columns[1].container(key=views.CSV_BUTTON_KEY):
+        st.download_button(
+            label,
+            data=data,
+            file_name=name,
+            mime="text/csv",
+            help=help_text,
+            icon=":material/download:",
+            type="secondary",
+            width="stretch",
+        )
     if legend is not None:
-        st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
         columns[2].markdown(legend, unsafe_allow_html=True)
 
 
@@ -474,26 +550,28 @@ def show_detail(results, key, choice, roles, changes=None):
         "The headers are shortened to fit the page; hover one to see what "
         "the workbook calls that column and what it means."
     )
-    st.dataframe(
-        # The SCOPE CELL tinted by region (11/19): the North sites, the
-        # South sites and the back office interleave once the rows are
-        # sorted by week, and a tint saves reading the Scope column on
-        # every line. One cell rather than the whole row, so the colour
-        # labels the scope instead of judging the row, and the figures
-        # keep the page's own background. column_config still decides
-        # every number's format - Streamlit's own rule - so the tints
-        # cannot undo 7d.
-        #
-        # NO MODE IS PASSED, and that is the fix for 11/20: the tint is
-        # one translucent wash per region that the browser composites
-        # over whatever the page background is at the moment it paints.
-        # A theme switch in the menu does not rerun this script, so a
-        # colour chosen here from the mode would still be on screen,
-        # wrong, long after the reader had switched.
-        views.plan_styler(view, dimensions),
-        hide_index=True,
-        width="stretch",
-        column_config=plan_column_config(),
+    # THE SCOPE IS A COLOURED BOLD WORD NOW (reviewers, 11/24), which is
+    # why this is our own HTML and not st.dataframe: the grid paints its
+    # cells on a canvas, where no CSS and no markdown can reach, so the
+    # only colour it could carry was a background wash. The word says
+    # the same thing in less ink, and the one line under the table says
+    # what the three colours mean.
+    #
+    # NO MODE IS PASSED, which is the 11/20 rule unchanged. Every colour
+    # in the stylesheet is a light-dark() pair the browser resolves on
+    # each repaint, so a theme switch - which does not rerun this script
+    # - lands on the right shade by itself.
+    specs = views.plan_column_specs()
+    shown = views.plan_display(view)
+    column, descending = sort_controls(specs, "detail")
+    st.markdown(
+        views.table_html(
+            views.sorted_view(shown, column, descending),
+            specs,
+            views.SCOPE_HEADER,
+            views.scope_class_of(dimensions),
+        ),
+        unsafe_allow_html=True,
     )
     filters = views.filter_lines(dimensions, choice, roles)
     if changes is None:
@@ -532,7 +610,7 @@ def show_detail(results, key, choice, roles, changes=None):
     show_downloads(
         (download.EXCEL_LABEL, excel, excel_name),
         (download.CSV_LABEL, data, name),
-        legend=views.region_key_html(views.region_key_rows(dimensions)),
+        legend=views.scope_line_html(dimensions),
     )
     st.caption(note)
 
@@ -545,41 +623,36 @@ def show_comparison(results):
         "lists the same runs alphabetically on purpose - a reference table "
         "that ranks is editorialising - but a reader who opens this view is "
         "asking which runs save money, so here the answer is the first row. "
-        "Click a column header to sort by it, or hover one to see what the "
-        "measure is - the same sentence the cards in the other view give."
+        "Sort by any column with the control below, or hover a header to "
+        "see what the measure is - the same sentence the cards in the "
+        "other view give."
     )
     table = views.comparison_table(results)
-    st.dataframe(
-        # Each run's kind washed in its kind's hue (11/20), through a
-        # Styler; the formats still come from column_config, which
-        # Streamlit gives precedence.
-        #
-        # A WASH AND NOT A TEXT COLOUR, and no mode is passed. The
-        # dataframe paints its cells on a canvas and renders no markdown
-        # in them, so the live colour name used everywhere else on this
-        # page cannot reach a cell. A translucent background is the one
-        # thing here that survives a theme switch, because the browser
-        # re-mixes it against the new page itself.
-        views.comparison_styler(table),
-        hide_index=True,
-        width="stretch",
-        # The same formats and the same per-measure notes the cards use
-        # (7d): before this the all-in cost read "$7,456,636" on a card
-        # and "7456636" here, which is one figure in two notations.
-        column_config=comparison_column_config(table),
-    )
-    # A key table rather than a paragraph (11/19). The paragraph said the
-    # same three things and nobody read it, because a reader scanning a
-    # ranked list wants to know what the word beside a run means, not to
-    # be taught a taxonomy.
-    st.markdown("**Kind is declared by the run, not worked out here**")
-    st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
+    # EACH RUN'S KIND AS A COLOURED BOLD WORD (reviewers, 11/24), in the
+    # same three shades Streamlit paints the kind with in the sidebar -
+    # read out of the theme file, so the word beside a run in the picker
+    # and the word in this table are one colour rather than two that
+    # nearly match.
+    #
+    # THE KIND KEY IS GONE with the swatches it explained. What it said
+    # is on the Kind column's own tooltip, which is where a reader who
+    # does not already know the word is looking.
+    specs = views.comparison_column_specs(table)
+    column, descending = sort_controls(specs, "compare")
     st.markdown(
-        views.kind_key_html(views.kind_key_rows()), unsafe_allow_html=True
+        views.table_html(
+            views.sorted_view(views.comparison_display(table), column,
+                              descending),
+            specs,
+            views.KIND_HEADER,
+            views.kind_class_of(),
+        ),
+        unsafe_allow_html=True,
     )
     st.caption(
-        "The ranking puts all three next to each other, and the cheapest "
-        "row is not always something anyone is offering to do."
+        "The ranking puts all three kinds next to each other, and the "
+        "cheapest row is not always something anyone is offering to do - "
+        "hover the Kind header for what each word means."
     )
 
     show_downloads(
@@ -997,11 +1070,15 @@ def show_custom_result(saved, catalogue, signature, choice, roles):
         for line in changes:
             st.markdown(f"- {line}")
     else:
-        st.info(
-            "Nothing is changed, so this IS the baseline: every card below "
-            "says no change, which is the panel working rather than a "
-            "fault.",
-            icon=":material/info:",
+        st.markdown(
+            views.banner_html(
+                "Nothing is changed, so this IS the baseline: every card "
+                "below says no change, which is the panel working rather "
+                "than a fault.",
+                "note",
+                lead="Note",
+            ),
+            unsafe_allow_html=True,
         )
     st.caption(
         f"The change starts in plan week {run['starts_week']}; the figures "
@@ -1089,6 +1166,11 @@ def main():
     meta = results["meta"]
     dimensions = filter_dimensions()
 
+    # The stylesheets first: every banner and table below is drawn with
+    # them, and a page that sent its markup before its CSS would flash
+    # unstyled on every rerun.
+    page_styles()
+
     # The intro first, above the picker: a visitor arrives knowing
     # neither what this operation is nor that it is invented (7d).
     show_intro(results, dimensions)
@@ -1137,6 +1219,7 @@ def main():
         return
 
     key = pick_run(results)
+    scroll_to_top(key)
     choice, roles = pick_filters(dimensions)
     st.sidebar.caption(
         f"{meta['scenario_count']} saved runs over {meta['plan_weeks']} plan "

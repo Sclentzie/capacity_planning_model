@@ -542,7 +542,12 @@ def test_the_dashboard_opens_the_saved_results_file(saved):
 
     # The synthetic statement is ON the page. A screenshot of a dashboard
     # travels further than the repository it came from.
-    assert any("SYNTHETIC" in warning.value for warning in app.warning)
+    # A banner the page draws itself since 11/24, so it arrives as
+    # markup rather than as st.warning's text.
+    assert any(
+        "SYNTHETIC" in str(block.value) and "cm-synthetic" in str(block.value)
+        for block in app.markdown
+    )
 
 
 def test_all_results_runs_the_scenarios_it_is_given(baseline_assumptions, sites):

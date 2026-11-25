@@ -277,31 +277,49 @@ def test_a_theme_switch_recolours_the_page_with_no_refresh(page):
             assert ratio >= views.AA_TEXT, f"{word} {shade} on {under}"
 
 
-def test_the_washes_are_the_same_string_in_both_palettes(page):
-    """The other half of the fix: what does NOT change.
+def test_every_figure_in_the_table_follows_the_theme(page):
+    """The other half of the rule: what the page does NOT colour.
 
-    A scope tint and a kind's cell are translucent, so the same string
-    is sent to both readers and the browser mixes it against whichever
-    page is showing. Here that is checked the other way round from the
-    tests above - the value must be IDENTICAL after a switch, because
-    nothing about it was ever chosen from the mode.
+    The scope and kind words carry a colour on purpose. Every other cell
+    sets none at all - "color: inherit" - because the text colour is the
+    one thing Streamlit keeps live by itself, and a cell that sets its
+    own would be a shade chosen for whichever palette happened to be
+    showing. That is the 11/20 bug, one layer in.
+
+    So: the figures have to be painted the page's own text colour in
+    both palettes, and have to CHANGE when the palette does, while the
+    figures themselves stay the same numbers.
+
+    (The translucent washes this file used to measure here are no longer
+    on the page. They are the workbook's now - the scope and kind fills
+    in the Excel file are mixed down from them - and a test in
+    test_download composites each one and fails if the two drift.)
     """
-    def swatches():
+    def cells():
         return page.evaluate("""
-          () => Array.from(document.querySelectorAll('span.cm-swatch'))
-            .map(s => getComputedStyle(s).backgroundColor)
+          () => Array.from(document.querySelectorAll('.cm-table tbody td'))
+            .slice(0, 40)
+            .filter(td => !td.querySelector('.cm-word'))
+            .map(td => [td.textContent.trim(), getComputedStyle(td).color])
         """)
 
     set_theme(page, "Light")
-    pick(page, BETTER_RUN)
-    light = swatches()
-    assert light, "no key swatches on the page"
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector(".cm-table tbody td", timeout=20000)
+    light = cells()
+    assert light, "no figures in the table to measure"
+    for _text, colour in light:
+        assert as_hex(colour) == views.text_colour(views.LIGHT_MODE), colour
 
     set_theme(page, "Dark")
-    assert swatches() == light, (
-        "a key swatch changed when the palette did, so it is being "
-        "chosen from the mode rather than composited by the browser"
+    dark = cells()
+    assert [text for text, _c in dark] == [text for text, _c in light], (
+        "the figures changed when the palette did"
     )
+    for _text, colour in dark:
+        assert as_hex(colour) == views.text_colour(views.DARK_MODE), colour
+
+    set_theme(page, "Light")
 
 
 @pytest.fixture(scope="module")
@@ -611,62 +629,367 @@ def test_the_change_line_is_bold_at_every_width(page, expected_cards, width):
 
 
 # ---------------------------------------------------------------------------
-# The kind key's swatch (Siri, 11/23)
+# The outside reviewers' fixes, measured in a real browser (11/24)
+#
+# EVERY ONE OF THESE IS A LIGHT-DARK() PAIR, and the whole question is
+# whether the browser resolves the pair against the palette that is
+# showing AT THE MOMENT IT PAINTS. Nothing in Python can answer that: the
+# script sends one string and never runs again when the reader switches.
+# So these drive the real menu and read back what was painted.
 # ---------------------------------------------------------------------------
 
-# Every swatch in the kind key: how big the browser actually drew it, and
-# what it drew it in.
-SWATCH_BOXES = """
-  () => Array.from(document.querySelectorAll('.cm-key-table .cm-swatch'))
-    .map(swatch => {
-      const box = swatch.getBoundingClientRect();
-      const style = getComputedStyle(swatch);
-      return {width: box.width, height: box.height,
-              display: style.display,
-              background: style.backgroundColor};
-    })
+# Every coloured word on the page, by the class that colours it.
+WORDS = """
+  () => {
+    const out = {};
+    for (const span of document.querySelectorAll('span.cm-word')) {
+      for (const name of span.classList) {
+        if (name === 'cm-word') continue;
+        const style = getComputedStyle(span);
+        (out[name] = out[name] || []).push({
+          text: span.textContent.trim(),
+          colour: style.color,
+          weight: style.fontWeight,
+        });
+      }
+    }
+    return out;
+  }
 """
 
-# A swatch has to read as a block of colour rather than as a rule under
-# the word beside it. Ten pixels each way is the floor; the stylesheet
-# asks for about fifteen.
-MIN_SWATCH = 10.0
+
+def words_by_class(tab):
+    return tab.evaluate(WORDS)
 
 
-def test_the_kind_key_swatch_is_a_block_and_not_a_line(page):
-    """IT WAS A THIN LINE, AND ONLY HERE (Siri's walkthrough, 11/23).
+def expected_shade(pair, mode):
+    """Which end of a recorded pair the browser should have picked."""
+    return pair[0] if mode == views.LIGHT_MODE else pair[1]
 
-    The same .cm-swatch class is used by both keys and looked right in
-    one of them, which is what made this worth measuring rather than
-    reading. An inline element has no width or height - the browser
-    ignores both - and in this key the swatch is a span inside a table
-    cell, so 0.85rem square was silently dropped and all that rendered
-    was a background on a zero-height box. In the region key the same
-    class is a flex item, and a flex item is blockified, so it drew
-    correctly by luck.
 
-    A stylesheet cannot be read to rule that out: the rule was there and
-    correct, and the browser was entitled to ignore it. Only the box the
-    browser drew says which happened.
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_every_scope_word_is_bold_and_in_its_own_colour(page, mode, label):
+    """The reviewers' first fix, measured where it has to be true.
+
+    One text colour cannot serve both pages - readable text needs 4.5:1,
+    and the two pages leave no shade in between - so each scope word goes
+    out as a light-dark() pair. This reads back what the browser resolved
+    and holds it to the recorded pair, to AA against the real page, and
+    to the bold the reviewers asked for.
     """
-    page.set_viewport_size({"width": 1600, "height": 1400})
-    page.wait_for_timeout(400)
+    set_theme(page, label)
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector("span.cm-word", timeout=20000)
+
+    found = words_by_class(page)
+    for region, pair in views.SCOPE_WORD_COLOURS.items():
+        name = views.scope_word_class(region)
+        assert name in found, f"{mode}: no {region} scope word on the page"
+        for word in found[name]:
+            painted = as_hex(word["colour"])
+            assert painted == expected_shade(pair, mode), (
+                f"{mode}: {word['text']} is painted {painted}, and "
+                f"views.SCOPE_WORD_COLOURS says {expected_shade(pair, mode)}"
+            )
+            assert int(word["weight"]) >= 700, word
+            ratio = views.contrast_ratio(painted, background(page))
+            assert ratio >= views.AA_TEXT, (
+                f"{mode}: {word['text']} is only {ratio:.2f}:1"
+            )
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_every_kind_word_is_bold_and_in_its_own_colour(page, mode, label):
+    """The same fix on the comparison table, where the Kind column is.
+
+    The shades are the ones the theme file declares, so this also checks
+    that the word in the table and the word in the sidebar caption - two
+    different mechanisms, CSS and Streamlit's markdown - land on one
+    colour rather than two that nearly match.
+    """
+    set_theme(page, label)
     try:
         pick(page, views.COMPARE_VIEW)
-        page.wait_for_selector(".cm-key-table .cm-swatch", timeout=20000)
-        swatches = page.evaluate(SWATCH_BOXES)
+        page.wait_for_selector("span.cm-word", timeout=20000)
+        found = words_by_class(page)
+        for kind, pair in views.KIND_WORD_COLOURS.items():
+            name = views.kind_word_class(kind)
+            assert name in found, f"{mode}: no {kind} on the page"
+            painted = as_hex(found[name][0]["colour"])
+            assert painted == expected_shade(pair, mode), (kind, painted)
+            assert int(found[name][0]["weight"]) >= 700
+            ratio = views.contrast_ratio(painted, background(page))
+            assert ratio >= views.AA_TEXT, f"{mode}: {kind} {ratio:.2f}:1"
 
-        assert len(swatches) == len(views.kind_key_rows()) == 3, swatches
-        for swatch in swatches:
-            assert swatch["display"] != "inline", (
-                "an inline swatch has no width or height: " + str(swatch)
-            )
-            assert swatch["width"] >= MIN_SWATCH, swatch
-            assert swatch["height"] >= MIN_SWATCH, swatch
-            # Square-ish, so it reads as a chip rather than as a bar.
-            assert abs(swatch["width"] - swatch["height"]) <= 2.0, swatch
-            # And actually carrying a colour, not an empty box.
-            assert swatch["background"].startswith("rgba("), swatch
-            assert not swatch["background"].endswith(", 0)"), swatch
+            # The sidebar says the same word through Streamlit's own
+            # markdown. One colour, two mechanisms.
+            caption = shades_of(page, [views.kind_label(kind)])
+            if views.kind_label(kind) in caption:
+                assert caption[views.kind_label(kind)] == painted, kind
     finally:
         pick(page, views.ONE_RUN_VIEW)
+
+
+def test_switching_the_palette_recolours_every_word_with_no_refresh(page):
+    """THE TEST THIS FILE EXISTS FOR, for the words (11/24).
+
+    Not a reload: the menu, which re-themes the browser without rerunning
+    the script. Every coloured word has to move to the other end of its
+    pair, and nothing may stay where it was - a word that did not move is
+    a shade this module picked, which is the bug of 11/20 come back in a
+    new place.
+    """
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector("span.cm-word", timeout=20000)
+    light = {
+        name: as_hex(words[0]["colour"])
+        for name, words in words_by_class(page).items()
+    }
+    assert light, "no coloured words to measure"
+
+    set_theme(page, "Dark")
+    dark = {
+        name: as_hex(words[0]["colour"])
+        for name, words in words_by_class(page).items()
+    }
+
+    assert set(light) == set(dark), "a word disappeared on the switch"
+    for name in light:
+        assert light[name] != dark[name], (
+            f"{name} stayed {light[name]} through a palette switch"
+        )
+    for region, pair in views.SCOPE_WORD_COLOURS.items():
+        name = views.scope_word_class(region)
+        assert (light[name], dark[name]) == pair, (region, light[name],
+                                                   dark[name])
+    set_theme(page, "Light")
+
+
+# What each download button was actually painted: its fill, its edge and
+# the colour of the label on it.
+BUTTONS = """
+  () => {
+    const out = {};
+    for (const key of ['%s', '%s']) {
+      const host = document.querySelector('.st-key-' + key + ' button');
+      if (!host) continue;
+      const style = getComputedStyle(host);
+      out[key] = {fill: style.backgroundColor,
+                  edge: style.borderTopColor,
+                  text: style.color};
+    }
+    return out;
+  }
+""" % (views.EXCEL_BUTTON_KEY, views.CSV_BUTTON_KEY)
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_the_two_downloads_wear_different_colours(page, mode, label):
+    """The reviewers' second fix: two buttons, two hues, both palettes.
+
+    A wash and an edge in the hue, and the LABEL left alone - text that
+    follows the theme is readable in both palettes without anybody
+    choosing a shade for it. So the label's colour has to be the page's
+    own text colour, and the two edges have to be the two recorded pairs
+    and different from each other.
+    """
+    set_theme(page, label)
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector(f".st-key-{views.EXCEL_BUTTON_KEY} button",
+                           timeout=20000)
+    buttons = page.evaluate(BUTTONS)
+    assert set(buttons) == {views.EXCEL_BUTTON_KEY, views.CSV_BUTTON_KEY}
+
+    excel = buttons[views.EXCEL_BUTTON_KEY]
+    csv = buttons[views.CSV_BUTTON_KEY]
+    assert as_hex(excel["edge"]) == expected_shade(views.EXCEL_COLOUR, mode)
+    assert as_hex(csv["edge"]) == expected_shade(views.CSV_COLOUR, mode)
+    assert as_hex(excel["edge"]) != as_hex(csv["edge"])
+    assert as_hex(excel["fill"]) != as_hex(csv["fill"])
+
+    # Translucent, so the page shows through and neither button is a
+    # block of colour competing with the table above it.
+    for button in (excel, csv):
+        assert button["fill"].startswith("rgba("), button["fill"]
+        alpha = float(button["fill"].rstrip(")").split(",")[-1])
+        assert 0 < alpha < 0.5, button["fill"]
+
+    # The label follows the theme, and reads on the fill it sits on.
+    for button in (excel, csv):
+        text = as_hex(button["text"])
+        assert text == views.text_colour(mode), (mode, text)
+        over = views.composite_over(button["fill"], background(page))
+        ratio = views.contrast_ratio(text, over)
+        assert ratio >= views.AA_TEXT, f"{mode}: label is {ratio:.2f}:1"
+
+
+# The two banners, as the browser drew them.
+BANNERS = """
+  () => {
+    const out = {};
+    for (const [key, selector] of [['synthetic', '.cm-synthetic'],
+                                   ['note', '.cm-note']]) {
+      const host = document.querySelector(selector);
+      if (!host) continue;
+      const style = getComputedStyle(host);
+      const lead = host.querySelector('.cm-banner-lead');
+      out[key] = {fill: style.backgroundColor, text: style.color,
+                  edge: style.borderLeftColor,
+                  lead: lead ? getComputedStyle(lead).color : null};
+    }
+    return out;
+  }
+"""
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_the_synthetic_banner_is_soft_and_still_readable(page, mode, label):
+    """The reviewers' third fix: softer than the warning block it replaced.
+
+    Softer is measurable: the fill is translucent rather than solid, so
+    the page shows through it. Prominent is measurable too: the lead word
+    is in the hue and the edge is the hue. And the sentence still has to
+    read, which is what AA against the composited fill says.
+    """
+    set_theme(page, label)
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector(".cm-synthetic", timeout=20000)
+    banner = page.evaluate(BANNERS)["synthetic"]
+
+    assert banner["fill"].startswith("rgba("), banner["fill"]
+    alpha = float(banner["fill"].rstrip(")").split(",")[-1])
+    assert 0 < alpha <= 0.2, f"the synthetic banner is not soft: {alpha}"
+
+    hue = expected_shade(views.SYNTHETIC_COLOUR, mode)
+    assert as_hex(banner["lead"]) == hue
+    assert as_hex(banner["edge"]) == hue
+
+    over = views.composite_over(banner["fill"], background(page))
+    for colour in (banner["text"], banner["lead"]):
+        ratio = views.contrast_ratio(as_hex(colour), over)
+        assert ratio >= views.AA_TEXT, f"{mode}: {ratio:.2f}:1 on {over}"
+
+
+def test_the_note_banner_is_the_dark_design_reversed(page):
+    """The reviewers' fourth fix, stated as the relationship they asked for.
+
+    They liked the dark one - a wash of the hue behind bright text of the
+    same hue - and asked for light to be that design REVERSED. So the two
+    ends have to be opposite: on charcoal the panel is a wash and the
+    text is the hue; on cream the hue fills the panel and the text is
+    pale. Both have to clear AA, which is the part a reversal could
+    quietly cost.
+    """
+    results = {}
+    for mode, label in ((views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark")):
+        set_theme(page, label)
+        pick(page, views.ONE_RUN_VIEW)
+        pick(page, BETTER_RUN)
+        page.wait_for_selector(".cm-note", timeout=20000)
+        banner = page.evaluate(BANNERS)["note"]
+        results[mode] = banner
+
+        # The light panel is SOLID - that is what the reversal means -
+        # and a solid fill is what the text sits on. The dark one is a
+        # wash, so the page underneath has to be mixed in first.
+        fill = banner["fill"]
+        over = (
+            views.composite_over(fill, background(page))
+            if fill.startswith("rgba(") else as_hex(fill)
+        )
+        ratio = views.contrast_ratio(as_hex(banner["text"]), over)
+        assert ratio >= views.AA_TEXT, f"{mode}: {ratio:.2f}:1 on {over}"
+
+    light, dark = results[views.LIGHT_MODE], results[views.DARK_MODE]
+    # Light: the hue fills the panel and the text is pale.
+    assert as_hex(light["fill"]) == views.NOTE_COLOUR[0], light["fill"]
+    assert views.relative_luminance(as_hex(light["text"])) > 0.7, light["text"]
+    # Dark: the panel is a wash and the text is the hue.
+    assert dark["fill"].startswith("rgba("), dark["fill"]
+    assert as_hex(dark["text"]) == views.NOTE_COLOUR[1], dark["text"]
+    # Which is the reversal, stated once: the two fills are at opposite
+    # ends of the lightness range, not two versions of the same panel.
+    assert views.relative_luminance(
+        as_hex(light["fill"])
+    ) < views.relative_luminance(as_hex(light["text"]))
+    assert views.relative_luminance(
+        as_hex(dark["text"])
+    ) > views.relative_luminance(
+        views.composite_over(dark["fill"], views.page_colour(views.DARK_MODE))
+    )
+
+
+def test_picking_a_run_puts_the_reader_back_at_the_top(page):
+    """The reviewers' fifth fix, measured as a scroll position.
+
+    A run is a whole page: picking one rewrites everything in the main
+    column, but the column keeps the scroll position the last run was
+    being read at - so a reader looking at week 40 of the table picks a
+    new run and lands in the middle of a table with the name of the run
+    they chose off the top of the screen.
+
+    The main element rather than the window, because Streamlit scrolls
+    the main block and the window never moves.
+    """
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)
+    # A KNOWN STARTING RUN. This module shares one page across its tests,
+    # so whichever run the last one left selected is still selected - and
+    # picking the run that is already showing is not a change, which is
+    # exactly when the page is meant NOT to scroll.
+    pick(page, BETTER_RUN)
+    page.wait_for_timeout(1000)
+
+    scroller = '[data-testid="stMain"]'
+    page.eval_on_selector(scroller, "el => el.scrollTo(0, 1200)")
+    page.wait_for_timeout(600)
+    moved = page.eval_on_selector(scroller, "el => el.scrollTop")
+    assert moved > 400, f"the page did not scroll at all: {moved}"
+
+    pick(page, WORSE_RUN)
+    page.wait_for_timeout(2500)
+    after = page.eval_on_selector(scroller, "el => el.scrollTop")
+    assert after < 50, (
+        f"picking a run left the reader at {after}px down the page"
+    )
+
+
+def test_the_table_header_sticks_and_the_body_scrolls(page):
+    """What the grid gave and CSS had to give back (11/24).
+
+    The HTML table replaced st.dataframe so a word in it could carry a
+    colour. Two of the three things the grid did for free are CSS - a
+    sticky header and a scrolling body - and this is what says they are
+    really there rather than a table running 780 rows down the page.
+    """
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_selector(".cm-table-wrap", timeout=20000)
+    measured = page.evaluate("""
+      () => {
+        const wrap = document.querySelector('.cm-table-wrap');
+        const head = document.querySelector('.cm-table thead th');
+        return {
+          scrolls: wrap.scrollHeight > wrap.clientHeight + 40,
+          height: wrap.clientHeight,
+          sticky: getComputedStyle(head).position,
+          rows: document.querySelectorAll('.cm-table tbody tr').length,
+          tooltip: head.getAttribute('title'),
+        };
+      }
+    """)
+    assert measured["sticky"] == "sticky", measured
+    assert measured["scrolls"], measured
+    assert 200 < measured["height"] < 700, measured
+    assert measured["rows"] > 100, measured
+    # And the header still says what the column is, which is the third
+    # thing the grid did.
+    assert measured["tooltip"], "a column header lost its tooltip"

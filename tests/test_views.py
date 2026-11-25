@@ -17,6 +17,7 @@ model to prove it - so nothing here needs eight minutes.
 import html
 import io
 import json
+import html as html_module
 import re
 import sys
 from pathlib import Path
@@ -78,6 +79,74 @@ def widget(app, kind, key):
 
 def run_picker(app):
     return widget(app, "radio", "run")
+
+
+
+def page_html(app):
+    """Everything the page wrote as markup, in one string.
+
+    THE TABLES ARE OUR OWN HTML NOW (11/24), so there is no app.dataframe
+    to read. This is the equivalent handle: what actually went to the
+    browser, which is also what a reader sees.
+    """
+    return "\n".join(block.value for block in app.markdown)
+
+
+def table_rows(markup):
+    """Every body row of the first table in some markup, cell by cell.
+
+    A small parser rather than a dependency: the markup is written by
+    views.table_html three lines away, so a regex that only has to read
+    what this project writes is honest about its scope.
+    """
+    body = re.search(r"<tbody>(.*?)</tbody>", markup, re.S)
+    if not body:
+        return []
+    rows = []
+    for row in re.findall(r"<tr>(.*?)</tr>", body.group(1), re.S):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        rows.append([
+            html_module.unescape(re.sub(r"<[^>]+>", "", cell)) for cell in cells
+        ])
+    return rows
+
+
+def table_headers(markup):
+    """The header row of the first table, as (label, tooltip) pairs."""
+    head = re.search(r"<thead>(.*?)</thead>", markup, re.S)
+    if not head:
+        return []
+    return [
+        (html_module.unescape(re.sub(r"<[^>]+>", "", cell)),
+         html_module.unescape(title))
+        for title, cell in re.findall(
+            r'<th[^>]*title="([^"]*)"[^>]*>(.*?)</th>', head.group(1), re.S
+        )
+    ]
+
+
+def page_style(app):
+    """The stylesheet the page sent, which is an st.html element.
+
+    st.html and not st.markdown, and for a reason worth keeping in the
+    test: markdown ends an HTML block at the line holding its closing
+    tag, so four sheets joined together lost everything after the first
+    "</style><style>" and the page silently had no stylesheet at all.
+    """
+    found = app.get("html")
+    assert found, "the page sent no stylesheet"
+    return "\n".join(str(element.proto.body) for element in found)
+
+
+def banner_texts(app, tone):
+    """The banners of one tone the page wrote."""
+    # The opening tag, not the class name: the page's own stylesheet
+    # mentions every class it styles, and matching that would return a
+    # block of CSS as if it were a banner.
+    opening = f'<div class="cm-banner cm-{tone}">'
+    return [
+        block.value for block in app.markdown if opening in block.value
+    ]
 
 
 def view_picker(app):
@@ -376,19 +445,16 @@ def test_the_page_offers_every_view_and_renders_the_comparison(results):
 
     view_picker(app).set_value("Compare all scenarios").run()
     assert not app.exception
-    shown = app.dataframe[0].value
-    assert len(shown) == len(results["scenarios"])
-    assert list(shown["Scenario"]) == list(
+    rows = table_rows(page_html(app))
+    assert len(rows) == len(results["scenarios"])
+    assert [row[0] for row in rows] == list(
         views.comparison_table(results)["Scenario"]
     )
     # The banner is on this view too: a screenshot of either travels.
-    assert results["meta"]["label"] in [banner.value for banner in app.warning]
-
-
-# ---------------------------------------------------------------------------
-# Scope: a back-office role has no site
-# ---------------------------------------------------------------------------
-
+    assert any(
+        views.SYNTHETIC_LEAD in banner
+        for banner in banner_texts(app, "synthetic")
+    )
 
 def test_the_scope_split_comes_from_the_yaml_not_this_module(dimensions):
     """supply.per_site_roles is the model's own rule (spec 4.4)."""
@@ -975,20 +1041,37 @@ def test_the_page_shows_a_no_change_card_in_blue(results):
 
 
 def test_the_page_says_it_is_synthetic(results):
-    """On the page, not in a footnote: screenshots travel."""
+    """On the page, not in a footnote: screenshots travel.
+
+    A banner this page draws itself since 11/24, so the statement is
+    checked in the markup rather than in st.warning's text. The whole
+    label has to be there: the lead word is lifted out and coloured, and
+    the rest of the sentence must still be said.
+    """
     app = app_test().run()
     assert not app.exception
-    banners = [banner.value for banner in app.warning]
-    assert results["meta"]["label"] in banners
-
+    banners = banner_texts(app, "synthetic")
+    assert banners, "the synthetic banner is not on the page"
+    shown = " ".join(
+        html_module.unescape(re.sub(r"<[^>]+>", "", banners[0])).split()
+    )
+    label = " ".join(results["meta"]["label"].split())
+    assert shown.startswith(views.SYNTHETIC_LEAD)
+    # The WHOLE label, word for word: the lead is lifted out and
+    # coloured, and nothing else about the statement may change.
+    assert shown == label, (shown, label)
 
 def test_the_page_shows_the_approved_finding_for_a_headline_run():
+    """The workbook's own sentence for the run, in the note banner."""
     app = app_test().run()
     run_picker(app).set_value("central_phones").run()
     assert not app.exception
     approved = dict(export.HEADLINES)["Centralized phones"]
-    assert approved in [note.value for note in app.info]
-
+    shown = [
+        html_module.unescape(re.sub(r"<[^>]+>", "", banner))
+        for banner in banner_texts(app, "note")
+    ]
+    assert any(approved in line for line in shown), shown
 
 def test_the_page_drops_the_back_office_roles_in_a_site_view(dimensions):
     """And puts the reason in the sidebar where the filter is."""
@@ -1012,16 +1095,18 @@ def test_the_page_drops_the_back_office_roles_in_a_site_view(dimensions):
 def test_the_page_lists_the_filtered_plan_rows(dimensions):
     """What is on screen is the filtered slice, not the whole plan."""
     app = app_test().run()
-    whole = app.dataframe[0].value
+    whole = table_rows(page_html(app))
     site = next(
         choice for choice in views.scope_choices(dimensions)
         if choice["code"] == "N1"
     )
     scope_picker(app).set_value(site["label"]).run()
-    filtered = app.dataframe[0].value
-    assert set(filtered["Site or scope"]) == {"N1"}
+    filtered = table_rows(page_html(app))
+    scope_at = [spec["column"] for spec in views.plan_column_specs()].index(
+        views.SCOPE_HEADER
+    )
+    assert {row[scope_at] for row in filtered} == {"N1"}
     assert len(filtered) < len(whole)
-
 
 def test_the_page_offers_excel_first_and_csv_beside_it(dimensions):
     """Two downloads under the detail table, in that order (Siri, 11/23).
@@ -1844,15 +1929,20 @@ def test_every_kind_has_a_colour_a_label_and_one_line_of_meaning():
         meaning = views.KIND_MEANINGS[kind]
         assert meaning.endswith("."), kind
         assert meaning[0].isupper(), kind
+        # And the pair the table writes the word with (11/24), which is
+        # read out of the theme file rather than copied beside it.
+        pair = views.KIND_WORD_COLOURS[kind]
+        assert pair == (
+            views.KIND_COLOURS[kind][views.LIGHT_MODE],
+            views.KIND_COLOURS[kind][views.DARK_MODE],
+        )
+        assert views.kind_word_class(kind) == f"cm-kind-{kind}"
 
-    rows = views.kind_key_rows()
-    assert [row["kind"] for row in rows] == list(scenarios.KINDS)
-    assert all(row["tint"] and row["meaning"] for row in rows)
     # A kind nobody declared gets no colour rather than a wrong one.
     assert views.declared_kind_colour("proposal") is None
     assert views.kind_tint("proposal") is None
     assert views.kind_markdown("proposal") == "proposal"
-
+    assert views.kind_word_class("proposal") is None
 
 def test_every_run_s_kind_is_a_kind_with_a_colour(results):
     """Checked against the saved runs, not against a list here: a run
@@ -1895,242 +1985,227 @@ def test_the_region_is_read_from_the_clusters_not_from_the_code(dimensions):
 
 
 def test_the_back_office_is_its_own_region(dimensions):
-    """Not a site and not a cluster (spec 6.7). The key says which roles
-    it covers, read from the roles themselves.
+    """Not a site and not a cluster (spec 6.7), and the one line under
+    the table says so in its own colour.
     """
-    rows = views.region_key_rows(dimensions)
-    assert len(rows) == len(dimensions["clusters"]) + 1
-    network = rows[-1]
-    assert network["region"] == views.NETWORK_REGION
-    assert dimensions["network_code"] in network["label"]
-    for role in views.network_roles(dimensions):
-        assert role["short_name"] in network["meaning"]
+    line = views.scope_line_html(dimensions)
+    assert views.scope_word_class(views.NETWORK_REGION) in line
+    assert dimensions["network_code"] in line
+    assert "back office" in line
+    for cluster in dimensions["clusters"]:
+        assert views.scope_word_class(cluster["code"]) in line, cluster["code"]
+        assert cluster["name"] in line, cluster["name"]
+    # One word per region and no more: a key with four entries for three
+    # regions would mean a scope was being explained twice.
+    assert line.count("cm-word") == len(dimensions["clusters"]) + 1
 
-
-def test_the_plan_styler_tints_each_scope_by_its_region(results, dimensions):
-    """Row by row, against the scope in that row.
-
-    Not parametrised over the modes any more, and that is the point of
-    11/20 rather than a gap in the test: there is one wash per region and
-    the browser composites it against whichever page it is painting, so
-    there is no second answer to check.
-    """
-    plan = results["scenarios"]["baseline"]["plan"]
-    view = views.plan_view(plan)
-    tints = views.scope_tints(view, dimensions)
-    assert len(tints) == len(view)
-    for scope, tint in zip(view[views.SCOPE_HEADER], tints):
-        region = views.region_of(scope, dimensions)
-        assert tint == views.region_tint(region), scope
-    # All three tints really are in use on a network-wide view.
-    assert set(tints) == {
-        views.region_tint(region) for region in views.REGION_TINTS
-    }
-
-    rendered = views.plan_styler(view, dimensions).to_html()
-    for region in views.REGION_TINTS:
-        tint = views.region_tint(region)
-        assert f"background-color: {tint}" in rendered, region
-
-    # No hex tint anywhere in it. This is the regression guard: the bug
-    # on 11/20 was a solid per-mode hex baked into the page, which stayed
-    # on screen after the reader switched because the script never reran.
-    assert not re.search(
-        r"background-color:\s*#", rendered
-    ), "a solid tint is back in the Scope column"
-
-
-# How far apart the three SOLID tints were, measured the same way, in the
-# worse of the two modes: dark north/network, 10.4 by CIE delta-E. Siri
-# approved those on 11/19 by eye, so they are the fair bar for the washes
-# that replace them - "no harder to tell apart than what you signed off".
-TINTS_REPLACED_APART = 10.4
-
-
-def test_the_scope_tint_has_no_mode_and_reads_in_both_modes(
+def test_the_scope_word_is_coloured_by_the_region_it_sits_in(
     results, dimensions
 ):
-    """Siri 11/20, the fix itself: one wash per region, no mode anywhere.
+    """Row by row, against the scope in that row (11/24).
 
-    The bug was not a wrong colour, it was a colour chosen at the wrong
-    TIME. Streamlit's Light/Dark menu re-themes the browser WITHOUT
+    The colour used to be a wash on the cell; the reviewers asked for the
+    word itself, so what is checked is the class the word wears. Through
+    views.scope_class_of rather than a copy of the mapping here, so a
+    site moved to another cluster in sites.yaml moves its colour too.
+    """
+    view = views.plan_view(results["scenarios"]["baseline"]["plan"])
+    class_of = views.scope_class_of(dimensions)
+    for scope in view[views.SCOPE_HEADER].unique():
+        region = views.region_of(scope, dimensions)
+        assert class_of(scope) == views.scope_word_class(region), scope
+
+    # All three colours really are in use on a network-wide view.
+    assert {class_of(scope) for scope in view[views.SCOPE_HEADER]} == {
+        views.scope_word_class(region) for region in views.SCOPE_WORD_COLOURS
+    }
+
+    markup = views.table_html(
+        views.plan_display(view.head(60)),
+        views.plan_column_specs(),
+        views.SCOPE_HEADER,
+        class_of,
+    )
+    for region in views.SCOPE_WORD_COLOURS:
+        assert views.scope_word_class(region) in markup, region
+    # BOLD, which is the other half of what was asked for, and said once
+    # in the stylesheet rather than on every one of 780 rows.
+    assert "cm-word" in markup
+    assert ".cm-word { font-weight: 700; }" in views.table_style()
+
+    # No hex in the markup at all: the shades are in the stylesheet, as
+    # pairs, and the row only names the class.
+    assert "#" not in markup.replace("&#x27;", ""), "a hex reached a row"
+
+def test_the_scope_words_have_no_mode_and_read_in_both_modes():
+    """Siri 11/20, restated for the words that replaced the washes.
+
+    The bug was never a wrong colour, it was a colour chosen at the wrong
+    TIME: Streamlit's Light/Dark menu re-themes the browser WITHOUT
     rerunning the script, so a hex this module picked from the mode was
-    still on the page after the reader had switched away from it: a pale
-    sand under off-white text, at about 1.2:1, until something else
-    happened to cause a rerun. A wash cannot do that, because the browser
-    composites it against whatever the page background is on the repaint.
+    still on the page after the reader had switched away from it. A
+    light-dark() pair cannot do that, because the browser resolves it on
+    every repaint - but only if nothing here ever picks one end of it.
 
-    Four things, then. That no tint carries a mode and none can be given
-    one; that each is really translucent; that both composites clear AA
-    with that mode's own body text; and that three regions are still
-    told apart once the page has been mixed into them, which is the part
-    a low alpha could quietly cost.
+    Four things, then. That no colour function takes a mode; that every
+    word colour goes out as a PAIR; that both ends clear AA on their own
+    page; and that the three regions are still told apart in both
+    palettes, which is the part a prettier palette could quietly cost.
     """
     import inspect
 
-    # 1. Not a mode in sight, on any of the four, and no way to pass one.
+    # 1. Not a mode in sight, and no way to pass one.
     for function in (
-        views.region_tint, views.scope_tints,
-        views.region_key_rows, views.plan_styler,
+        views.live_colour, views.scope_word_class, views.kind_word_class,
+        views.scope_class_of, views.kind_class_of, views.table_html,
+        views.scope_line_html, views.banner_html, views.table_style,
     ):
         assert "mode" not in inspect.signature(function).parameters, (
             f"{function.__name__} takes a mode again"
         )
-    with pytest.raises(TypeError):
-        views.region_tint("north", views.DARK_MODE)
 
-    # 2. Translucent, and one string for both palettes.
-    for region, wash in views.REGION_TINTS.items():
-        assert views.is_wash(wash), f"{region} is not translucent: {wash}"
-        assert views.region_tint(region) == wash
-    assert len(set(views.REGION_TINTS.values())) == len(views.REGION_TINTS)
+    # 2. A pair, not a pick, and both ends really are different.
+    for region, pair in views.SCOPE_WORD_COLOURS.items():
+        light, dark = pair
+        assert light != dark, region
+        assert views.live_colour(pair) == f"light-dark({light}, {dark})"
 
-    # 3. Readable over BOTH page backgrounds. The text colour is
-    # Streamlit's to paint, because nothing here sets one - which is the
-    # other half of the fix, checked below.
-    for mode in views.MODES:
-        page, text = views.page_colour(mode), views.text_colour(mode)
-        for region in views.REGION_TINTS:
-            over = views.composite_over(views.region_tint(region), page)
-            ratio = views.contrast_ratio(text, over)
+    # 3. Readable on its own page, measured against the real backgrounds.
+    for name, pair in (
+        list(views.SCOPE_WORD_COLOURS.items())
+        + list(views.KIND_WORD_COLOURS.items())
+    ):
+        for mode, shade in zip(views.MODES, pair):
+            ratio = views.contrast_ratio(shade, views.page_colour(mode))
             assert ratio >= views.AA_TEXT, (
-                f"{mode} {region}: {over} under {text} is only {ratio:.2f}:1"
+                f"{mode} {name}: {shade} is only {ratio:.2f}:1"
             )
 
-    # 4. And still three distinguishable regions, composited, in both.
-    for mode in views.MODES:
-        page = views.page_colour(mode)
-        over = {
-            region: views.composite_over(views.region_tint(region), page)
-            for region in views.REGION_TINTS
-        }
-        names = sorted(over)
-        for at, one in enumerate(names):
-            for other in names[at + 1:]:
-                apart = views.colour_distance(over[one], over[other])
-                assert apart >= TINTS_REPLACED_APART, (
-                    f"{mode}: {one} {over[one]} and {other} {over[other]} "
-                    f"are only {apart:.1f} apart (the solid tints managed "
-                    f"{TINTS_REPLACED_APART})"
+    # 4. And still three regions a reader can tell apart, in both.
+    for mode, end in enumerate(views.MODES):
+        shades = [pair[mode] for pair in views.SCOPE_WORD_COLOURS.values()]
+        for first in range(len(shades)):
+            for second in range(first + 1, len(shades)):
+                apart = views.colour_distance(shades[first], shades[second])
+                assert apart >= views.DISTINCT, (
+                    f"{end}: {shades[first]} and {shades[second]} are only "
+                    f"{apart:.1f} apart"
                 )
 
-    # 5. NO TEXT COLOUR in the Scope column. Setting one would put the
-    # same bug back a layer up: the wash would follow the reader and the
-    # words sitting on it would not.
-    view = views.plan_view(results["scenarios"]["baseline"]["plan"]).head(40)
-    painted = views.plan_styler(view, dimensions).to_html()
-    assert "background-color" in painted
-    assert not re.search(r"(?<!background-)color:", painted), (
-        "the Scope column sets a text colour, which cannot follow a switch"
-    )
-
-
-def test_the_tint_lands_on_the_scope_cell_and_nowhere_else(
+def test_the_colour_lands_on_the_scope_word_and_nowhere_else(
     results, dimensions
 ):
-    """Siri 11/19: the colour goes on the Scope cell, not the whole row.
+    """Siri 11/19, still true of the word: one cell, not the whole row.
 
-    Counted, not spot-checked. A row-wide tint puts a background on all
-    seventeen columns of every row - which is what this used to do - and
-    that passes any test that only asks "is the tint in there?". So the
-    tinted cells are read back out of the Styler's own rendered CSS,
-    which names every one of them as row and column, and both the column
-    and the count have to come out right.
+    Counted, not spot-checked. Every coloured span in the table is found
+    and the column it sits in is worked out from its position in the row,
+    so a colour that reached a figure would be caught rather than hidden
+    by a test that only asks "is the colour in there?".
     """
     view = views.plan_view(results["scenarios"]["baseline"]["plan"]).head(40)
-    headers = list(views.plan_display(view).columns)
-    scope_at = headers.index(views.SCOPE_HEADER)
-
-    rendered = views.plan_styler(view, dimensions).to_html()
-    # pandas names every styled cell in the CSS it renders, and GROUPS
-    # the cells that share a style under one selector list:
-    #   "#T_a_row0_col3, #T_a_row1_col3 { background-color: #f0e2c8; }"
-    # So each rule is taken whole and every cell in its selector list is
-    # counted - reading only the selector next to the brace would find
-    # three cells here instead of forty.
-    tinted = set()
-    for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", rendered):
-        if "background-color" not in body:
-            continue
-        for row, column in re.findall(r"_row(\d+)_col(\d+)", selectors):
-            tinted.add((int(row), int(column)))
-    assert tinted, "nothing was tinted at all"
-    assert {column for _row, column in tinted} == {scope_at}, (
-        f"a tint reached a column that is not Scope ({scope_at}): "
-        f"{sorted({column for _row, column in tinted})}"
-    )
-    assert len(tinted) == len(view), (
-        f"{len(tinted)} tinted cells for {len(view)} rows - expected one each"
+    specs = views.plan_column_specs()
+    scope_at = [spec["column"] for spec in specs].index(views.SCOPE_HEADER)
+    markup = views.table_html(
+        views.plan_display(view), specs, views.SCOPE_HEADER,
+        views.scope_class_of(dimensions),
     )
 
-    # Said the other way round, which is the part a reader notices: the
-    # figures keep the page's own background. Every column but Scope is
-    # untouched, whatever it holds.
-    assert len(headers) > 1
-    for at, header in enumerate(headers):
-        if at == scope_at:
-            continue
-        assert not [key for key in tinted if key[1] == at], header
+    coloured = set()
+    for row_at, row in enumerate(re.findall(r"<tr>(.*?)</tr>", markup, re.S)):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        for column_at, cell in enumerate(cells):
+            if "cm-word" in cell:
+                coloured.add((row_at, column_at))
+    assert coloured, "nothing was coloured at all"
+    assert {column for _row, column in coloured} == {scope_at}, (
+        "a colour reached a column that is not Scope: "
+        f"{sorted({column for _row, column in coloured})}"
+    )
+    assert len(coloured) == len(view), (
+        f"{len(coloured)} coloured words for {len(view)} rows"
+    )
 
-
-def test_the_tints_leave_the_figures_and_the_download_alone(
+def test_the_colours_leave_the_figures_and_the_download_alone(
     results, dimensions
 ):
-    """A tint is a thing done to a screen. The rounded figures on screen
-    and the full-precision bytes in the CSV are the same as before it.
+    """A colour is a thing done to a screen. The figures on screen and
+    the full-precision bytes in the CSV are the same as before it.
     """
     view = views.plan_view(results["scenarios"]["volume_plus_15"]["plan"])
+    specs = views.plan_column_specs()
     plain = views.plan_display(view)
     text = views.csv_bytes(view).decode("utf-8")
 
-    assert views.plan_styler(view, dimensions).data.equals(plain)
+    # Every figure in the table is the display frame's own value, written
+    # the way the workbook writes it - nothing is rounded, scaled or
+    # dropped on the way into a cell.
+    rows = table_rows(
+        views.table_html(
+            plain.head(25), specs, views.SCOPE_HEADER,
+            views.scope_class_of(dimensions),
+        )
+    )
+    for row, (_at, record) in zip(rows, plain.head(25).iterrows()):
+        for cell, spec in zip(row, specs):
+            assert cell == views.format_value(
+                record[spec["column"]], spec.get("number_format")
+            ), spec["column"]
 
     assert views.csv_bytes(view) == views.csv_bytes(view)
-    assert "background-color" not in text
-    for region in views.REGION_TINTS:
-        assert views.region_tint(region) not in text
+    assert "cm-word" not in text
+    assert "light-dark" not in text
 
+def test_the_scope_line_sits_beside_the_download(results, dimensions):
+    """One line of coloured words, where the key with swatches used to be.
 
-# ---------------------------------------------------------------------------
-# Both keys, on the page
-# ---------------------------------------------------------------------------
-
-
-def test_the_region_key_sits_beside_the_download(results, dimensions):
+    The key is gone (11/24) because the colour it explained is gone: the
+    scope IS the word now, so the line names the word and colours it from
+    the same CSS rule the column does.
+    """
     app = app_test().run()
     assert not app.exception
     blocks = [str(block.value) for block in app.markdown]
-    key = [block for block in blocks if "cm-key-item" in block]
-    assert key, "no region key reached the page"
-    for row in views.region_key_rows(dimensions):
-        assert any(row["colour"] in block for block in key), row["label"]
-        assert any(row["label"] in block for block in key), row["label"]
+    # The opening tag, not the class name: the stylesheet mentions every
+    # class it styles, and matching that would find CSS, not a line.
+    line = [block for block in blocks if '<div class="cm-scope-line">' in block]
+    assert line, "no scope line reached the page"
+    for cluster in dimensions["clusters"]:
+        assert views.scope_word_class(cluster["code"]) in line[0]
+        assert cluster["name"] in line[0]
+    assert dimensions["network_code"] in line[0]
 
+    # The keys it replaced are gone rather than both being on the page.
+    assert not any("cm-key-item" in block for block in blocks)
+    assert not any("cm-key-table" in block for block in blocks)
 
-def test_the_kind_key_table_replaced_the_paragraph(results):
+def test_the_kind_column_carries_what_the_key_used_to_say(results):
+    """The key is gone and its three sentences are on the column (11/24).
+
+    A key under a table is a second place to look. The tooltip is on the
+    header a reader is already pointing at when they wonder what the word
+    beside a run means.
+    """
     app = app_test().run()
     view_picker(app).set_value(views.COMPARE_VIEW).run()
     assert not app.exception
 
-    blocks = [str(block.value) for block in app.markdown]
-    table = [block for block in blocks if "cm-key-table" in block and "<tr>" in block]
-    assert table, "no kind key table reached the page"
-    for row in views.kind_key_rows():
-        # The swatch wears the wash (11/20), which is the same string in
-        # both palettes and the same string the Kind column above paints.
-        assert row["tint"] in table[0], row["label"]
-        assert row["label"] in table[0], row["label"]
-        assert row["meaning"] in table[0], row["label"]
+    markup = page_html(app)
+    headers = dict(table_headers(markup))
+    assert views.KIND_HEADER in headers, "no Kind column on the page"
+    note = headers[views.KIND_HEADER]
+    for kind in scenarios.KINDS:
+        assert views.kind_label(kind).upper() in note.upper(), kind
 
-    # And the kind's WORD carries no colour of its own: it is the page's
-    # text colour, which Streamlit keeps live. A hex here would be a
-    # shade picked for one palette and stranded in the other.
-    assert "color: #" not in table[0], "a kind label is written in a hex again"
+    # Every run's kind is a coloured bold word in its own row.
+    for kind in scenarios.KINDS:
+        assert views.kind_word_class(kind) in markup, kind
+    # And no hex beside it: the shades are in the stylesheet, as pairs.
+    body = markup[markup.index("<tbody>"):]
+    assert "color: #" not in body, "a kind label is written in a hex again"
 
     # The paragraph it replaced is gone, rather than both being shown.
     captions = [str(caption.value) for caption in app.caption]
     assert not any("A CHOICE is" in caption for caption in captions)
-
 
 def test_the_kind_beside_a_run_in_the_picker_is_coloured(results):
     """In the picker, a kind is markdown, so the colour arrives as the
@@ -2144,32 +2219,29 @@ def test_the_kind_beside_a_run_in_the_picker_is_coloured(results):
         assert any(wanted in caption for caption in captions), kind
 
 
-def test_the_detail_table_keeps_its_formats_under_the_tints(results):
-    """Streamlit's rule: "Text and number formatting from column_config
-    always takes precedence over text and number formatting from
-    pandas.Styler". Checked on the real page, because that rule is the
-    whole reason the tints are safe to add.
+def test_the_detail_table_writes_every_figure_the_way_the_cards_do():
+    """One format per measure (7d), now that the table writes its own.
 
-    The washes go in as written: they are the same in either palette, so
-    unlike every other colour on the page there is no "which mode is this"
-    to get right here.
+    The column settings used to do this and the grid obeyed them. An
+    HTML cell is a string, so views.table_html formats every figure
+    through format_value - the same function the cards use - and this is
+    what checks the page still gets money with a dollar sign and hours to
+    one decimal rather than raw floats.
     """
     app = app_test().run()
     assert not app.exception
-    proto = app.dataframe[0].proto
-    assert proto.arrow_data.styler.styles, "no tints in the dataframe proto"
-    for region in views.REGION_TINTS:
-        tint = views.region_tint(region)
-        assert tint in proto.arrow_data.styler.styles, (region, tint)
-    # And the column settings are still there, money format and all.
-    assert "$%,.0f" in proto.columns
-    assert "%,.1f" in proto.columns
+    specs = views.plan_column_specs()
+    rows = table_rows(page_html(app))
+    assert rows, "no detail table on the page"
 
-
-# ---------------------------------------------------------------------------
-# Picking a shade at render time (7d, 11/19)
-# ---------------------------------------------------------------------------
-
+    at = {spec["column"]: index for index, spec in enumerate(specs)}
+    money = rows[0][at[views.LABOUR_HEADER]]
+    assert money.startswith("$") and "," in money, money
+    hours = rows[0][at["Required hours"]]
+    assert re.fullmatch(r"[\d,]+\.\d", hours), hours
+    # And the headers carry the workbook's own name in their tooltip.
+    headers = dict(table_headers(page_html(app)))
+    assert any("Required hours" in note for note in headers.values())
 
 def test_the_shade_lookup_answers_with_the_right_mode():
     """The one function every custom colour goes through.
@@ -2262,27 +2334,28 @@ def test_every_custom_colour_has_both_shades():
         assert views.kind_tint(kind) == expected, kind
 
 
-def test_not_one_per_mode_hex_reaches_the_page(results):
-    """THE GUARD (Siri, 11/20). Nothing this module picked per mode may
-    be written into the page, anywhere, in any view.
+def test_a_per_mode_hex_only_reaches_the_page_inside_a_pair(results):
+    """THE GUARD (Siri, 11/20), restated for 11/24.
 
-    This is the bug stated as a property rather than as a list of places
-    it was found. Switching Light/Dark in the menu re-themes the browser
-    without rerunning this script, so a hex chosen here is correct when
-    it is chosen and wrong the moment the reader switches - and nothing
-    raises, which is why it survived 837 tests and a deployment.
+    The rule has never been "no hexes on the page". It is that nothing
+    on the page may depend on which palette was showing when the script
+    last ran - because switching Light/Dark re-themes the browser WITHOUT
+    rerunning it, so a shade chosen here is correct when it is chosen and
+    wrong the moment the reader switches.
 
-    Every view is rendered and every hex the project declares twice is
-    looked for in what reached the page: the markdown, the Styler protos
-    the dataframes carry, and the captions.
+    A light-dark(a, b) pair does not break that rule: BOTH shades go to
+    the browser and the browser picks, every repaint. One of the two
+    shades on its own does break it. So this test takes every pair out of
+    what reached the page and then looks for a per-mode hex in what is
+    left - which is the rule exactly as stated, rather than a ban on the
+    character "#".
     """
     def drawn(app):
         blocks = [str(block.value) for block in app.markdown]
         blocks += [str(caption.value) for caption in app.caption]
-        blocks += [
-            str(frame.proto.arrow_data.styler.styles)
-            for frame in app.dataframe
-        ]
+        # The stylesheet, which is where every colour this page draws
+        # itself with lives.
+        blocks.append(page_style(app))
         # The sidebar's run captions carry the kinds, and a radio keeps
         # its captions in its proto rather than sending them as markdown.
         blocks += [str(radio.proto.captions) for radio in app.radio]
@@ -2305,22 +2378,26 @@ def test_not_one_per_mode_hex_reaches_the_page(results):
     assert not app.exception
     page += " " + drawn(app)
 
+    # Both shades really are being sent, or the rest of this test would
+    # pass for the wrong reason.
+    assert "light-dark(" in page, "no pair reached the page at all"
+    for pair in list(views.SCOPE_WORD_COLOURS.values()) + [views.EXCEL_COLOUR]:
+        assert views.live_colour(pair) in page, pair
+
+    outside_a_pair = re.sub(r"light-dark\([^)]*\)", " ", page)
     stray = {
         name: colour for name, colour in per_mode_hexes().items()
-        if colour.lower() in page.lower()
+        if colour.lower() in outside_a_pair.lower()
     }
     assert not stray, (
-        "a hex chosen per mode reached the page, and will be the wrong "
-        f"one the moment a reader switches palette: {stray}"
+        "a hex chosen per mode reached the page outside a light-dark() "
+        f"pair, and will be the wrong one the moment a reader switches: "
+        f"{stray}"
     )
 
-    # And the live forms really are there, rather than nothing being
-    # drawn and this passing for the wrong reason.
+    # And the live forms really are there too.
     assert f":{views.SAME_COLOUR}[" in page, "no card colour name drawn"
     assert views.kind_markdown(scenarios.KIND_CHOICE) in page, "no kind drawn"
-    assert views.region_tint("north") in page, "no scope wash drawn"
-    assert views.kind_tint(scenarios.KIND_CHOICE) in page, "no kind wash drawn"
-
 
 def test_nothing_coloured_is_drawn_with_a_mode():
     """Read off the page's own source, which is the only way to catch a
@@ -2329,8 +2406,8 @@ def test_nothing_coloured_is_drawn_with_a_mode():
     THE OPPOSITE OF WHAT THIS TEST USED TO ASK (11/20). It used to
     require every coloured call to be handed the mode, which was the
     right discipline for a page that reruns - and this page does not.
-    Now nothing may be handed one, because there is no longer anything
-    on the page that a mode could correctly answer.
+    Now nothing may be handed one, because there is no longer anything on
+    the page that a mode could correctly answer.
     """
     source = (
         Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
@@ -2344,10 +2421,14 @@ def test_nothing_coloured_is_drawn_with_a_mode():
     for call in (
         "views.card_html(",
         "views.card_markdown(",
-        "views.comparison_styler(",
-        "views.kind_key_rows(",
-        "views.plan_styler(",
-        "views.region_key_rows(",
+        "views.table_html(",
+        "views.table_style(",
+        "views.scope_line_html(",
+        "views.scope_class_of(",
+        "views.kind_class_of(",
+        "views.banner_html(",
+        "views.banner_style(",
+        "views.download_style(",
     ):
         for arguments in arguments_of(call):
             assert "mode" not in arguments, (
@@ -2367,12 +2448,12 @@ def test_nothing_coloured_is_drawn_with_a_mode():
 
     for name in (
         "card_colour", "card_markdown", "card_html", "kind_tint",
-        "kind_markdown", "kind_key_rows", "comparison_styler",
-        "region_tint", "scope_tints", "region_key_rows", "plan_styler",
+        "kind_markdown", "region_tint", "live_colour", "live_wash",
+        "table_html", "table_style", "scope_line_html", "banner_html",
+        "banner_style", "download_style", "scope_class_of", "kind_class_of",
     ):
         taken = inspect.signature(getattr(views, name)).parameters
         assert "mode" not in taken, f"views.{name} takes a mode again"
-
 
 def dark_mode_context(monkeypatch):
     """Make the real page believe the reader is in dark mode.
@@ -2410,18 +2491,12 @@ def test_a_dark_mode_reader_gets_exactly_the_same_page(results, monkeypatch):
     what the theme menu does not do.
     """
     def drawn(app):
-        blocks = [str(block.value) for block in app.markdown]
-        blocks += [
-            str(frame.proto.arrow_data.styler.styles)
-            for frame in app.dataframe
-        ]
-        # pandas names a Styler's CSS classes after a hash of the
-        # Styler object, so two renders of one table differ there and
-        # nowhere else. That is noise, not a palette, so it is
-        # normalised away - and only that: every colour survives.
-        return re.sub(
-            r"T_[0-9a-f]{5,}", "T_x", "\n".join(blocks)
-        )
+        # EVERYTHING this page draws is markup now (11/24): the tables as
+        # well as the banners and the cards, so the comparison is the
+        # markup itself with nothing normalised away. It used to need a
+        # Styler's class hashes normalised out, and those are gone with
+        # the Styler.
+        return "\n".join(str(block.value) for block in app.markdown)
 
     def render(key=None, view=None):
         app = app_test().run()
@@ -2499,17 +2574,20 @@ def test_the_sidebar_says_where_light_and_dark_are_changed(results):
     assert "\n" not in note[0]
 
 
-def test_a_filtered_view_is_tinted_by_label_not_by_position(
+def test_a_filtered_view_colours_each_row_by_its_own_scope(
     results, dimensions
 ):
     """The bug this guards against, which a full-table test cannot see.
 
-    Filtering by role or scope hands plan_styler a view whose index is
-    whatever survived the filter - 418, 419, 423 - not 0, 1, 2. Zipping
-    tints to positions while pandas hands back labels would tint every
-    row with some other row's colour, and on the full table the two
-    happen to agree, so it would look perfect until somebody used a
-    filter.
+    Filtering hands the table a view whose index is whatever survived the
+    filter - 418, 419, 423 - not 0, 1, 2. Anything that lined colours up
+    with POSITIONS while reading values by LABEL would give every row
+    some other row's colour, and on the unfiltered table the two agree,
+    so it would look perfect until somebody used a filter.
+
+    The table writer reads each record whole, so the two cannot come
+    apart by construction - and this is what says so, row by row, on a
+    view whose labels are deliberately not its positions.
     """
     view = views.plan_view(results["scenarios"]["baseline"]["plan"])
     sliced = view.iloc[10:30]
@@ -2517,27 +2595,161 @@ def test_a_filtered_view_is_tinted_by_label_not_by_position(
         "this test needs a view whose labels are not its positions"
     )
 
-    rendered = views.plan_styler(sliced, dimensions).to_html()
-    headers = list(views.plan_display(sliced).columns)
-    scope_at = headers.index(views.SCOPE_HEADER)
+    specs = views.plan_column_specs()
+    scope_at = [spec["column"] for spec in specs].index(views.SCOPE_HEADER)
+    markup = views.table_html(
+        views.plan_display(sliced), specs, views.SCOPE_HEADER,
+        views.scope_class_of(dimensions),
+    )
 
-    painted = {}
-    for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", rendered):
-        # The whole value, not a hex: the tints are rgba washes (11/20),
-        # and a hex-only pattern would quietly match nothing and leave
-        # this test asserting things about an empty dict.
-        found = re.search(r"background-color:\s*([^;]+)", body)
-        if not found:
-            continue
-        for row, column in re.findall(r"_row(\d+)_col(\d+)", selectors):
-            painted[(int(row), int(column))] = found.group(1).strip()
+    body = markup[markup.index("<tbody>"):]
+    rows = re.findall(r"<tr>(.*?)</tr>", body, re.S)
+    assert len(rows) == len(sliced), (len(rows), len(sliced))
+    for row, scope in zip(rows, sliced[views.SCOPE_HEADER]):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        cell = cells[scope_at]
+        expected = views.scope_word_class(views.region_of(scope, dimensions))
+        assert expected in cell, (scope, cell)
+        assert scope in cell, (scope, cell)
 
-    # pandas numbers its rendered rows 0..n by POSITION, so each one is
-    # checked against the scope at that same position in the view.
-    scopes = list(sliced[views.SCOPE_HEADER])
-    assert len(painted) == len(scopes)
-    for at, scope in enumerate(scopes):
-        region = views.region_of(scope, dimensions)
-        assert painted[(at, scope_at)] == views.region_tint(region), (
-            f"row {at} ({scope}) wears another row's tint"
+
+# ---------------------------------------------------------------------------
+# The rest of the outside reviewers' fixes (11/24)
+# ---------------------------------------------------------------------------
+
+
+def test_the_sort_control_reorders_the_rows():
+    """What replaced clicking a column header.
+
+    An HTML table cannot sort itself, so the sort happens in pandas and
+    the table is written again. Both ends are checked, because a control
+    that only ever sorted one way would pass a test that only looked at
+    one of them.
+    """
+    app = app_test().run()
+    specs = views.plan_column_specs()
+    at = {spec["column"]: index for index, spec in enumerate(specs)}
+    column = views.LABOUR_HEADER
+
+    sorter = next(box for box in app.selectbox if box.label == "Sort by")
+    assert sorter.options[0] == views.SORT_AS_SHOWN
+    assert column in sorter.options
+
+    sorter.set_value(column).run()
+    assert not app.exception
+    money = [
+        float(row[at[column]].replace("$", "").replace(",", ""))
+        for row in table_rows(page_html(app))
+    ]
+    assert money == sorted(money), "low to high is not sorted"
+
+    app.toggle[0].set_value(True).run()
+    assert not app.exception
+    money = [
+        float(row[at[column]].replace("$", "").replace(",", ""))
+        for row in table_rows(page_html(app))
+    ]
+    assert money == sorted(money, reverse=True), "high to low is not sorted"
+
+    # And the view's own order is still on offer, and still the default
+    # a reader lands on.
+    app.toggle[0].set_value(False).run()
+    sorter = next(box for box in app.selectbox if box.label == "Sort by")
+    sorter.set_value(views.SORT_AS_SHOWN).run()
+    weeks = [int(row[at["Plan week"]]) for row in table_rows(page_html(app))]
+    assert weeks == sorted(weeks), "the view's own order is not by week"
+
+
+def test_changing_the_run_sends_the_reader_back_to_the_top():
+    """The scroll, as the only thing a headless test can see of it.
+
+    Streamlit has no scroll API, so the page sends a one-line script in
+    an iframe of a single collapsed pixel. What is checkable here is
+    WHEN it is sent: on a change of run and not otherwise. The scroll
+    itself is measured in a browser, in test_live_colours.
+
+    Not on first load, because there is nothing to scroll back from, and
+    not on a filter change, because a reader who moves a filter is
+    looking at the thing they just filtered.
+    """
+    app = app_test().run()
+    assert len(app.get("iframe")) == 0, "the page scrolled on first load"
+
+    run_picker(app).set_value("volume_plus_15").run()
+    assert not app.exception
+    assert len(app.get("iframe")) == 1, "picking a run did not scroll"
+
+    app.get("multiselect")[0].set_value(["records_specialist"]).run()
+    assert not app.exception
+    assert len(app.get("iframe")) == 0, "a filter change scrolled the page"
+
+    # The script scrolls the element Streamlit actually scrolls, which is
+    # the main block and not the window - measured in the browser on
+    # 11/24, and the one thing about it that is easy to get wrong.
+    run_picker(app).set_value("central_phones").run()
+    script = app.get("iframe")[0].proto.srcdoc
+    assert 'data-testid="stMain"' in script
+    assert "scrollTo" in script
+
+    # AND THE SCRIPT NAMES THE RUN, which is not decoration: an iframe
+    # whose srcdoc is unchanged is the same DOM node after a rerun, and a
+    # browser does not re-run a script it has already run - so one fixed
+    # script scrolled exactly once per session and then silently stopped.
+    assert "central_phones" in script
+    run_picker(app).set_value("volume_plus_15").run()
+    second = app.get("iframe")[0].proto.srcdoc
+    assert second != script, (
+        "two runs sent the same frame, so the second one will not scroll"
+    )
+
+
+def test_the_two_downloads_are_each_in_their_own_keyed_container():
+    """How a stylesheet reaches a widget this page does not own.
+
+    Streamlit writes a container's key onto the element as a class, and
+    that class is the only handle the CSS gets. If a key is renamed in
+    one place and not the other, nothing raises - the buttons just go
+    back to being Streamlit's blue and gray - so the two are checked
+    against each other here.
+    """
+    app = app_test().run()
+    assert not app.exception
+    sheet = page_style(app)
+    for key in (views.EXCEL_BUTTON_KEY, views.CSV_BUTTON_KEY):
+        assert f".st-key-{key} button" in sheet, key
+
+    # Both hues are really in the sheet, as pairs, and they differ.
+    assert views.live_colour(views.EXCEL_COLOUR) in sheet
+    assert views.live_colour(views.CSV_COLOUR) in sheet
+    assert views.EXCEL_COLOUR != views.CSV_COLOUR
+
+    # And the label is left to the theme rather than given a shade.
+    assert "color: inherit !important" in sheet
+
+
+def test_every_colour_the_page_draws_itself_with_goes_out_as_a_pair():
+    """The 11/20 rule as a property of the stylesheets themselves.
+
+    Each sheet is built from the recorded pairs, so the check is that no
+    single shade escaped into one: every hex in every sheet has to sit
+    inside a light-dark() pair, because a lone hex is a shade chosen for
+    whichever palette happened to be showing.
+    """
+    sheets = {
+        "table": views.table_style(),
+        "banner": views.banner_style(),
+        "download": views.download_style(),
+        "collapse": views.collapse_style(),
+    }
+    for name, sheet in sheets.items():
+        outside = re.sub(r"light-dark\([^)]*\)", " ", sheet)
+        assert "#" not in outside, (
+            f"the {name} stylesheet has a colour outside a pair: "
+            f"{outside[max(0, outside.index('#') - 40):][:80]}"
         )
+
+    # And the pairs really are there, rather than a sheet with no colour
+    # in it passing for the wrong reason.
+    assert views.live_colour(views.SYNTHETIC_COLOUR) in sheets["banner"]
+    for region, pair in views.SCOPE_WORD_COLOURS.items():
+        assert views.live_colour(pair) in sheets["table"], region

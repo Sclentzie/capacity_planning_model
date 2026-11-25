@@ -881,6 +881,7 @@ def comparison_column_specs(table):
                 "label": header,
                 "help": note,
                 "format": SCREEN_NUMBER_FORMATS.get(number_format, TEXT_COLUMN),
+                "number_format": number_format,
             }
         )
     return specs
@@ -1042,58 +1043,6 @@ def kind_markdown(kind):
     label = kind_label(kind)
     name = KIND_MARKDOWN.get(kind)
     return f":{name}[{label}]" if name else label
-
-
-def kind_key_rows():
-    """The kind key: one row per kind, in the order a reader meets them.
-
-    A tint rather than a colour (11/20). The key sits under the
-    comparison table and has to match what that table paints, and the
-    table paints a wash.
-    """
-    return [
-        {
-            "kind": kind,
-            "label": kind_label(kind),
-            "tint": kind_tint(kind),
-            "meaning": KIND_MEANINGS[kind],
-        }
-        for kind in scenarios.KINDS
-    ]
-
-
-def comparison_styler(table):
-    """The comparison table, each run's kind washed in its kind's hue.
-
-    THE CELL'S BACKGROUND, NOT ITS TEXT (Siri, 11/20). The dataframe
-    draws its cells on a canvas and renders no markdown in them, so the
-    live colour name that works everywhere else on this page cannot
-    reach here - a cell handed ":violet[Choice]" shows that literal
-    string, which was checked in a browser rather than assumed. A text
-    hex would be a colour chosen per mode, and stale the moment a reader
-    switched. A translucent background is neither: the browser mixes it
-    with whichever page is showing, and the text on top stays
-    Streamlit's own.
-
-    The Kind column only, and the Styler carries nothing but that, so
-    column_config still decides every number's format - which is what
-    keeps 7d's one-format-per-measure rule true here.
-    """
-    tint_of = {kind_label(kind): kind_tint(kind) for kind in KIND_COLOURS}
-
-    def paint(column):
-        # No "color:" in what this returns. Setting one would put the
-        # stale-shade bug back a layer up, and a test greps for it.
-        return [
-            f"background-color: {tint_of[value]}; font-weight: 600"
-            if value in tint_of else ""
-            for value in column
-        ]
-
-    shown = comparison_display(table)
-    if KIND_HEADER not in shown.columns:
-        return shown.style
-    return shown.style.apply(paint, subset=[KIND_HEADER])
 
 
 # ---------------------------------------------------------------------------
@@ -1693,9 +1642,12 @@ def full_names_note():
 def plan_column_specs():
     """One spec per Capacity Plan column, as plain data.
 
-    Plain data rather than Streamlit objects on purpose: the dashboard
-    turns these into st.column_config, and a test can read the widths and
-    the headers without starting a page.
+    Plain data rather than Streamlit objects on purpose: table_html
+    writes the headers, the tooltips and the number formats out of these,
+    and a test can read all three without starting a page. They fed
+    st.column_config until 11/24, when the table became our own HTML so
+    that a scope could be a coloured word; the widths are kept because
+    they are still what the columns were sized against.
     """
     kind_of = {
         header: number_format
@@ -1724,6 +1676,9 @@ def plan_column_specs():
                 # out without leaving the page.
                 "help": f"{header}. {note}",
                 "format": PLAN_NUMBER_FORMATS.get(number_format, TEXT_COLUMN),
+                # The workbook's own format for this measure, so the
+                # table writer can print the figure the way the cards do.
+                "number_format": number_format,
             }
         )
     return specs
@@ -1836,144 +1791,474 @@ def region_tint(region):
     return REGION_TINTS.get(region, REGION_FALLBACK_TINT)
 
 
-def region_key_rows(dimensions=None):
-    """The region key: label, wash and what the wash covers.
+# ---------------------------------------------------------------------------
+# ONE COLOUR MECHANISM FOR EVERYTHING THIS PAGE DRAWS ITSELF (11/24)
+#
+# The outside reviewers asked for the scope and the kind to be COLOURED
+# BOLD WORDS rather than tinted cells, in both palettes. That is a harder
+# request than it sounds, and the reason is worth writing down.
+#
+# A word needs a TEXT colour, and one text colour cannot serve both
+# pages. Readable text needs 4.5:1. On the cream page (#faf7f2) that caps
+# a colour at about 0.17 relative luminance; on the charcoal page
+# (#191b1e) it needs at least 0.20. There is no colour in between, so any
+# single hex is unreadable in one mode - which is why the cells were
+# washed with a translucent background in the first place: a wash has no
+# mode to get wrong, because the browser re-mixes it over whatever page
+# is showing.
+#
+# THE MECHANISM: CSS light-dark(). Modern CSS resolves light-dark(a, b)
+# against the color-scheme in force, and Streamlit sets color-scheme on
+# .stApp - measured in a real browser on 11/24: "light" in light mode,
+# "dark" in dark mode, flipping on a menu switch with NO rerun. So one
+# string carries both shades and the browser picks, every repaint.
+#
+# This keeps the 11/20 rule exactly as it was, and a test still enforces
+# it: nothing here chooses a shade from the mode. What goes to the
+# browser is the SAME markup for both readers - a pair, not a pick.
+#
+# WHY THE TABLES ARE OUR OWN HTML NOW. st.dataframe paints on a canvas
+# and renders no markdown and no CSS in its cells, so a coloured word
+# cannot reach one. Siri chose the HTML table on 11/24, with a Sort by
+# control to replace the grid's click-to-sort. What the grid gave and CSS
+# gives back: a sticky header, a scrolling body, and a tooltip on every
+# column header. What it does not give back is sorting by a click on the
+# header, which is why the control exists.
+# ---------------------------------------------------------------------------
 
-    The swatches are our own HTML, so the same rgba string the table
-    uses composites over the page there too, and the key re-tints itself
-    on a theme switch along with the column it explains.
+
+def live_colour(pair):
+    """Both shades in one string, for the browser to choose between.
+
+    NEVER one shade chosen here. This function exists so that every
+    colour this page draws goes out as a pair, and so that a test can
+    find anything that does not.
     """
-    dimensions = dimensions if dimensions is not None else api.dimensions()
-    rows = []
-    for cluster in dimensions["clusters"]:
-        rows.append(
-            {
-                "region": cluster["code"],
-                "label": cluster["name"],
-                "colour": region_tint(cluster["code"]),
-                "meaning": ", ".join(cluster["sites"]),
-            }
-        )
-    rows.append(
-        {
-            "region": NETWORK_REGION,
-            "label": f"{dimensions['network_code']} (back office)",
-            "colour": region_tint(NETWORK_REGION),
-            "meaning": ", ".join(
-                role["short_name"] for role in network_roles(dimensions)
-            ),
-        }
-    )
-    return rows
+    light, dark = pair
+    return f"light-dark({light}, {dark})"
 
 
-def scope_tints(view, dimensions=None):
-    """One tint per row of the plan view, in the view's own order.
+def _rgba(colour, alpha):
+    red, green, blue = _parts(colour)
+    return f"rgba({red}, {green}, {blue}, {alpha})"
 
-    One per ROW even though only the Scope cell wears it: the tint is a
-    fact about that row's scope, and the styler needs them lined up with
-    the rows to know which cell gets which.
-    """
-    dimensions = dimensions if dimensions is not None else api.dimensions()
-    return [
-        region_tint(region_of(scope, dimensions))
-        for scope in view[SCOPE_HEADER]
+
+def live_wash(pair, alpha):
+    """The same pair as a translucent fill, for a panel or a button."""
+    light, dark = pair
+    return f"light-dark({_rgba(light, alpha)}, {_rgba(dark, alpha)})"
+
+
+# THE THREE SCOPE WORDS, measured on 11/24 against both pages. The hues
+# are the ones the workbook already tints a scope cell with - amber for
+# the North cluster, violet for the South, slate for the back office - so
+# a reader with the Excel file open beside the page sees the same three
+# families. These are the TEXT ends of those hues: dark enough to read on
+# cream, pale enough to read on charcoal.
+#
+#                          light          dark
+#   north   amber/bronze   6.24:1         9.50:1
+#   south   violet         8.09:1         6.81:1
+#   network slate          6.89:1         8.20:1
+#
+# Apart from each other by CIE delta-E 44.8 at the closest in light and
+# 48.0 in dark, against the 40 this file calls DISTINCT. A test
+# recomputes all of it rather than trusting this table.
+SCOPE_WORD_COLOURS = {
+    "north": ("#7d5410", "#e8b964"),
+    "south": ("#5b3a8c", "#be8fe8"),
+    NETWORK_REGION: ("#44586b", "#9fb6c6"),
+}
+
+# The kind words use the SAME hexes Streamlit paints a kind with
+# everywhere else - the sidebar caption above all - so the word in the
+# table and the word in the sidebar are one colour rather than two that
+# nearly match. Read out of KIND_COLOURS rather than copied, so the theme
+# file stays the single place a kind's shade is decided.
+KIND_WORD_COLOURS = {
+    kind: (pair[LIGHT_MODE], pair[DARK_MODE])
+    for kind, pair in KIND_COLOURS.items()
+}
+
+# The two downloads, in two of the scope hues, because the reviewers
+# asked for buttons that harmonise with the scope words rather than
+# Streamlit's blue and gray. Violet leads and slate follows, which is the
+# order the buttons are in: Excel is the one almost everybody wants, and
+# the CSV is for whoever is doing arithmetic on it.
+EXCEL_COLOUR = SCOPE_WORD_COLOURS["south"]
+CSV_COLOUR = SCOPE_WORD_COLOURS[NETWORK_REGION]
+
+# The synthetic banner takes the third scope hue. Softer than the warning
+# yellow it replaces - a 12% wash and an edge rather than a filled block
+# - and still the first coloured thing on the page.
+SYNTHETIC_COLOUR = SCOPE_WORD_COLOURS["north"]
+
+# The run-summary and instruction banners keep the blue they have always
+# had, which is the one the reviewers liked in dark mode. Read out of
+# RENDERED_COLOURS so there is one record of what blue is.
+#
+# NOT THE TEAL ACCENT: slate and teal are 10.3 apart by delta-E, and two
+# quiet blue-grays on one page read as one colour used inconsistently.
+NOTE_COLOUR = (
+    RENDERED_COLOURS["blue"][LIGHT_MODE],
+    RENDERED_COLOURS["blue"][DARK_MODE],
+)
+
+# How much of a hue sits behind a panel or a button. Low, because the
+# word or the label on top of it has to stay the loudest thing there.
+PANEL_ALPHA = 0.12
+BUTTON_ALPHA = 0.10
+HOVER_ALPHA = 0.22
+
+# The lines a table draws itself with. Neutral on purpose: the only
+# colour in a table should be the word that carries a meaning.
+TABLE_LINE = ("#e2dcd2", "#32353a")
+TABLE_HEAD_FILL = ("#f1ece4", "#23262b")
+
+# The pale end of the note panel's text, for the light page where the hue
+# fills the panel instead of washing it.
+NOTE_REVERSED_TEXT = "#f8f9fc"
+
+
+def scope_word_class(region):
+    """The CSS class a scope word wears, or none for a scope with no region."""
+    return f"cm-scope-{region}" if region in SCOPE_WORD_COLOURS else None
+
+
+def kind_word_class(kind):
+    """The CSS class a kind word wears."""
+    return f"cm-kind-{kind}" if kind in KIND_WORD_COLOURS else None
+
+
+def word_rules():
+    """One CSS rule per coloured word, built from the recorded pairs."""
+    rules = [
+        f".cm-scope-{region} {{ color: {live_colour(pair)}; }}"
+        for region, pair in SCOPE_WORD_COLOURS.items()
     ]
+    rules += [
+        f".cm-kind-{kind} {{ color: {live_colour(pair)}; }}"
+        for kind, pair in KIND_WORD_COLOURS.items()
+    ]
+    return "\n".join(rules)
 
 
-def plan_styler(view, dimensions=None, names=None):
-    """The plan view, rounded and named for a reader, Scope cell tinted.
+TABLE_STYLE = """<style>
+.cm-table-wrap {{ max-height: {height}; overflow: auto;
+                  border: 1px solid {line}; border-radius: 0.4rem; }}
+.cm-table {{ border-collapse: collapse; width: 100%;
+             font-size: 0.8125rem; font-variant-numeric: tabular-nums; }}
+/* STICKY, so the headers stay put the way the grid's did. */
+.cm-table thead th {{ position: sticky; top: 0; z-index: 2;
+                      background: {head}; color: inherit;
+                      font-weight: 600; text-align: right;
+                      padding: 0.35rem 0.6rem; white-space: nowrap;
+                      border-bottom: 1px solid {line}; }}
+.cm-table th.cm-left, .cm-table td.cm-left {{ text-align: left; }}
+/* COLOUR: INHERIT on every figure, which is the 11/20 rule written in
+   CSS. The page's own text colour is the one thing Streamlit keeps live,
+   so a cell that sets no colour of its own is right in both palettes for
+   nothing. */
+.cm-table td {{ color: inherit; text-align: right;
+                padding: 0.25rem 0.6rem; white-space: nowrap;
+                border-bottom: 1px solid {line}; }}
+.cm-table tbody tr:last-child td {{ border-bottom: none; }}
+.cm-word {{ font-weight: 700; }}
+.cm-scope-line {{ font-size: 0.8125rem; line-height: 1.6;
+                  padding: 0.1rem 0 0.35rem 0; }}
+{words}
+</style>"""
 
-    Streamlit takes the colours from a Styler and keeps its own
-    column_config for every number's format - its words: "Text and
-    number formatting from column_config always takes precedence over
-    text and number formatting from pandas.Styler" - so the tints cannot
-    quietly undo 7d's one-format-per-measure rule.
+TABLE_HEIGHT = "26rem"
+
+
+def table_style(height=TABLE_HEIGHT):
+    """The table stylesheet, with the height of the scrolling box."""
+    return TABLE_STYLE.format(
+        height=height,
+        line=live_colour(TABLE_LINE),
+        head=live_colour(TABLE_HEAD_FILL),
+        words=word_rules(),
+    )
+
+
+def table_html(frame, specs, word_column=None, class_of=None):
+    """The rows on screen as a table the page draws itself.
+
+    `specs` are the same plain dicts the column settings were built from,
+    so the headers, the tooltips and the number formats are decided in
+    one place and merely written here. `word_column` is the one column
+    whose value is a coloured bold word - Scope on the detail table, Kind
+    on the comparison - and `class_of` turns that value into its class.
+
+    EVERY FIGURE IS FORMATTED HERE, because an HTML cell is a string and
+    there is no column setting left to do it. Through format_value, which
+    is the function the cards use, so a figure reads the same wherever it
+    appears on the page.
     """
-    shown = plan_display(view, names=names)
-    if SCOPE_HEADER not in view.columns or SCOPE_HEADER not in shown.columns:
-        return shown.style
-    # Keyed by the index LABEL rather than by position: pandas hands the
-    # painter a column whose index is the frame's own labels, and a view
-    # that arrived with anything but a 0..n index would otherwise be
-    # tinted off by however much the labels differ.
-    tint_of = dict(zip(view.index, scope_tints(view, dimensions)))
+    heads = []
+    for spec in specs:
+        align = ' class="cm-left"' if spec["format"] == TEXT_COLUMN else ""
+        heads.append(
+            f'<th{align} title="{html.escape(spec["help"])}">'
+            f'{html.escape(spec["label"])}</th>'
+        )
+    body = []
+    for record in frame.to_dict("records"):
+        cells = []
+        for spec in specs:
+            column = spec["column"]
+            value = record.get(column)
+            text = html.escape(format_value(value, spec.get("number_format")))
+            if spec["format"] == TEXT_COLUMN:
+                if column == word_column and class_of is not None:
+                    name = class_of(value)
+                    if name:
+                        text = f'<span class="cm-word {name}">{text}</span>'
+                cells.append(f'<td class="cm-left">{text}</td>')
+            else:
+                cells.append(f"<td>{text}</td>")
+        body.append("<tr>" + "".join(cells) + "</tr>")
+    return (
+        '<div class="cm-table-wrap"><table class="cm-table"><thead><tr>'
+        + "".join(heads)
+        + "</tr></thead><tbody>"
+        + "".join(body)
+        + "</tbody></table></div>"
+    )
 
-    def paint(column):
-        return [
-            f"background-color: {tint_of[label]}" if tint_of[label] else ""
-            for label in column.index
-        ]
 
-    # ONE COLUMN, BY NAME. Every other cell is left exactly as it was,
-    # which is the whole point of moving off the row.
-    return shown.style.apply(paint, subset=[SCOPE_HEADER])
+def scope_line_html(dimensions=None):
+    """One line of coloured bold words: what N, S and NETWORK mean.
+
+    This replaces the region key and the kind key (11/24). A key with
+    swatches explained a colour that no longer exists - the scope is the
+    word now, so the line names the word and colours it the same way the
+    column does, from the same CSS rule.
+
+    Built from the loaded dimensions, so a cluster renamed in sites.yaml
+    renames itself here.
+    """
+    dimensions = dimensions if dimensions is not None else api.dimensions()
+    parts = [
+        (scope_word_class(cluster["code"]), cluster["code"][0].upper(),
+         cluster["name"])
+        for cluster in dimensions["clusters"]
+    ]
+    parts.append(
+        (scope_word_class(NETWORK_REGION), dimensions["network_code"],
+         "back office")
+    )
+    shown = " &middot; ".join(
+        f'<span class="cm-word {name}">{html.escape(word)}</span>'
+        f" = {html.escape(meaning)}"
+        for name, word, meaning in parts
+    )
+    return f'<div class="cm-scope-line">{shown}</div>'
+
+
+def scope_class_of(dimensions=None):
+    """How to colour a scope value: by the region its site sits in.
+
+    Returned as a function rather than a dict, because the table writer
+    should not have to know that a scope answers to a cluster.
+    """
+    dimensions = dimensions if dimensions is not None else api.dimensions()
+
+    def class_of(scope):
+        return scope_word_class(region_of(scope, dimensions))
+
+    return class_of
+
+
+def kind_class_of():
+    """How to colour a kind value, which arrives as its own label."""
+    by_label = {kind_label(kind): kind for kind in KIND_WORD_COLOURS}
+
+    def class_of(label):
+        return kind_word_class(by_label.get(label))
+
+    return class_of
+
+
+SORT_AS_SHOWN = "The order above"
+
+SORT_HELP = (
+    "Which column to order the rows by. The order above is the view's "
+    "own: the detail table arrives by plan week, and the comparison by "
+    "what each run does to the all-in cost."
+)
+
+ORDER_HELP = (
+    "Which end first. Off is low to high, on is high to low - so the "
+    "worst week, or the biggest saving, comes to the top."
+)
+
+
+def sort_options(specs):
+    """What a reader may sort by: the view's own order, then its columns."""
+    return [SORT_AS_SHOWN] + [spec["column"] for spec in specs]
+
+
+def sorted_view(frame, column=None, descending=False):
+    """The rows in the order the reader asked for.
+
+    Stable, so the view's own order survives inside equal values: the
+    detail table arrives sorted by week and the comparison by what each
+    run does to the all-in cost, and sorting by a column full of ties
+    should not shuffle what is underneath them.
+    """
+    if not column or column == SORT_AS_SHOWN or column not in frame.columns:
+        return frame
+    return frame.sort_values(
+        column, ascending=not descending, kind="mergesort"
+    ).reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
-# The two colour keys, and whether their colours can be read (11/19)
+# The banners and the two download buttons (11/24)
+#
+# All of it in light-dark() pairs, for the reason at the top of this
+# section: these are panels a reader looks at in both palettes, and a
+# panel that picked its shade when the script last ran would be wrong the
+# moment they switched.
+#
+# THE NOTE BANNERS ARE THE DARK DESIGN, REVERSED. The reviewers liked the
+# dark one: a wash of the hue behind bright text of the same hue.
+# Reversed for the cream page means the two ends swap - the hue fills the
+# panel and the text goes pale - rather than the washed-out pale blue
+# panel that was there, which is the dark design copied rather than
+# reversed.
 # ---------------------------------------------------------------------------
 
-KEY_STYLE = """<style>
-.cm-key { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem;
-          font-size: 0.8125rem; line-height: 1.5; }
-.cm-key-item { display: flex; align-items: center; gap: 0.4rem; }
-/* INLINE-BLOCK, AND THAT IS THE WHOLE FIX (Siri, 11/23). An inline
-   element has no width or height - the browser ignores both - so in the
-   kind key, where the swatch is a span inside a table cell, 0.85rem
-   square was quietly dropped and all that rendered was a background on a
-   zero-height box: a thin line. In the region key the same class looked
-   right by luck, because its parent is a flex container and a flex item
-   is blockified. Saying it here means the swatch is a block wherever it
-   is put, rather than wherever it happens to be put next. */
-.cm-swatch { display: inline-block; vertical-align: -0.1rem;
-             width: 0.95rem; height: 0.95rem; border-radius: 0.2rem;
-             /* A mid gray at 40%, which reads as an edge on the cream page
-                and on the charcoal one. The old pure-black edge vanished
-                into a dark page, and a swatch with no edge is a smudge. */
-             border: 1px solid rgba(128, 128, 128, 0.4); flex: none; }
-.cm-key-table { border-collapse: collapse; font-size: 0.8125rem; }
-.cm-key-table td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
+BANNER_STYLE = """<style>
+.cm-banner {{ border-radius: 0.5rem; padding: 0.7rem 0.9rem;
+              margin: 0.25rem 0 0.75rem 0; font-size: 0.9rem;
+              line-height: 1.55; }}
+.cm-banner-lead {{ font-weight: 700; letter-spacing: 0.02em; }}
+/* SYNTHETIC: a wash and an edge, not a filled warning block. Prominent,
+   because it leads with its own word in the hue and carries a 4px edge;
+   soft, because nothing on this page is actually wrong. */
+.cm-synthetic {{ background: {synth_fill}; color: inherit;
+                 border: 1px solid {synth_edge};
+                 border-left: 4px solid {synth_edge}; }}
+.cm-synthetic .cm-banner-lead {{ color: {synth_word}; }}
+/* THE NOTE PANEL, whose two ends are deliberately opposite: on cream the
+   hue fills the panel and the text is pale, on charcoal the hue washes
+   the panel and the text is bright. */
+.cm-note {{ background: {note_fill}; color: {note_text};
+            border-left: 4px solid {note_edge}; }}
+.cm-note a {{ color: inherit; }}
 </style>"""
 
 
-def region_key_html(rows):
-    """The region key, as a line of swatches beside the download."""
-    items = "".join(
-        f'<div class="cm-key-item">'
-        f'<span class="cm-swatch" style="background: {row["colour"]};"></span>'
-        f'<span>{html.escape(row["label"])}</span></div>'
-        for row in rows
+def banner_style():
+    """The banner stylesheet, built from the recorded pairs."""
+    return BANNER_STYLE.format(
+        synth_fill=live_wash(SYNTHETIC_COLOUR, PANEL_ALPHA),
+        synth_edge=live_colour(SYNTHETIC_COLOUR),
+        synth_word=live_colour(SYNTHETIC_COLOUR),
+        note_fill=(
+            f"light-dark({NOTE_COLOUR[0]}, "
+            f"{_rgba(NOTE_COLOUR[1], PANEL_ALPHA)})"
+        ),
+        note_text=f"light-dark({NOTE_REVERSED_TEXT}, {NOTE_COLOUR[1]})",
+        note_edge=live_colour(NOTE_COLOUR),
     )
-    return f'<div class="cm-key">{items}</div>'
 
 
-def kind_key_html(rows):
-    """The kind key: a swatch, the kind, and one line of what it means.
+BANNER_TONES = {"synthetic": "cm-synthetic", "note": "cm-note"}
 
-    A table rather than a paragraph (11/19). The paragraph said the same
-    three things and nobody read it, because a reader scanning a ranked
-    list wants to know what the word beside a run means, not to be
-    taught a taxonomy.
+SYNTHETIC_LEAD = "SYNTHETIC"
 
-    THE SWATCH CARRIES THE KIND'S WASH AND THE WORD CARRIES NO COLOUR
-    (11/20). The swatch has to match what the table above it paints, and
-    that is a translucent wash - so the two agree by using one string.
-    The word used to be written in the kind's hex, which is a colour
-    picked per mode and therefore stale the moment a reader switched;
-    now it is the page's own text colour, which Streamlit keeps live,
-    and the swatch beside it says which kind it is.
+
+def banner_html(text, tone, lead=None):
+    """One banner: a lead word in the hue, then the sentence."""
+    shown = html.escape(text)
+    if lead:
+        shown = (
+            f'<span class="cm-banner-lead">{html.escape(lead)}</span> {shown}'
+        )
+    return f'<div class="cm-banner {BANNER_TONES[tone]}">{shown}</div>'
+
+
+def synthetic_banner_html(label):
+    """The synthetic statement, with its own first word as the lead.
+
+    The label already begins with the word, because it is the same
+    sentence the workbook and every file name carry; taking it off the
+    front and giving it back as the coloured lead keeps one statement
+    rather than making a second one up for the page.
     """
-    body = "".join(
-        f"<tr>"
-        f'<td><span class="cm-swatch" style="background: {row["tint"]};">'
-        f"</span></td>"
-        f'<td style="font-weight: 600;">{html.escape(row["label"])}</td>'
-        f"<td>{html.escape(row['meaning'])}</td>"
-        f"</tr>"
-        for row in rows
+    text = label
+    if text.startswith(SYNTHETIC_LEAD):
+        # The word only. Everything after it, separator included, is the
+        # label as it was written, so the banner and the file names and
+        # the workbook all still say one sentence rather than three
+        # versions of one.
+        text = text[len(SYNTHETIC_LEAD):].lstrip()
+    return banner_html(text, "synthetic", lead=SYNTHETIC_LEAD)
+
+
+# The scroll-to-top iframe has to be at least a pixel tall - Streamlit
+# refuses a height of zero - so its container is collapsed here instead.
+# Nothing is drawn in it: it exists to run one line of script.
+SCROLL_KEY = "cm-scroll-top"
+
+# Where every stylesheet on this page is written. A <style> block still
+# arrives inside an element container, and four of them left four
+# element-sized gaps under the title - so they go in one container, and
+# the first rule in the sheet collapses it. A collapsed container still
+# applies its CSS: display is about what is drawn, not about what is
+# declared.
+STYLE_KEY = "cm-styles"
+
+COLLAPSE_STYLE = """<style>
+.st-key-{style_key}, .st-key-{scroll_key} {{
+    height: 0; min-height: 0; overflow: hidden; margin: 0; padding: 0; }}
+</style>"""
+
+
+def collapse_style():
+    """The rule that hides the two containers nothing is drawn in."""
+    return COLLAPSE_STYLE.format(style_key=STYLE_KEY, scroll_key=SCROLL_KEY)
+
+
+EXCEL_BUTTON_KEY = "cm-excel-button"
+CSV_BUTTON_KEY = "cm-csv-button"
+
+DOWNLOAD_STYLE = """<style>
+/* The two downloads, told apart by hue rather than by Streamlit's
+   primary-blue and secondary-gray. A wash and a 1px edge in the hue, and
+   THE LABEL IS LEFT ALONE: text that follows the theme is text that is
+   readable in both palettes without anybody choosing a shade for it.
+   Reached through the container key Streamlit puts on the element, which
+   is the only handle a stylesheet gets on a widget it does not own. */
+.st-key-{excel_key} button {{ background: {excel_fill} !important;
+                              border: 1px solid {excel_edge} !important;
+                              color: inherit !important; }}
+.st-key-{csv_key} button {{ background: {csv_fill} !important;
+                            border: 1px solid {csv_edge} !important;
+                            color: inherit !important; }}
+.st-key-{excel_key} button:hover {{ background: {excel_hover} !important; }}
+.st-key-{csv_key} button:hover {{ background: {csv_hover} !important; }}
+.st-key-{excel_key} button p, .st-key-{csv_key} button p {{
+    color: inherit !important; }}
+</style>"""
+
+
+def download_style():
+    """The two buttons' colours, built from the recorded pairs."""
+    return DOWNLOAD_STYLE.format(
+        excel_key=EXCEL_BUTTON_KEY,
+        csv_key=CSV_BUTTON_KEY,
+        excel_fill=live_wash(EXCEL_COLOUR, BUTTON_ALPHA),
+        excel_edge=live_colour(EXCEL_COLOUR),
+        excel_hover=live_wash(EXCEL_COLOUR, HOVER_ALPHA),
+        csv_fill=live_wash(CSV_COLOUR, BUTTON_ALPHA),
+        csv_edge=live_colour(CSV_COLOUR),
+        csv_hover=live_wash(CSV_COLOUR, HOVER_ALPHA),
     )
-    return f'<table class="cm-key-table">{body}</table>'
 
 
 def _channel(value):

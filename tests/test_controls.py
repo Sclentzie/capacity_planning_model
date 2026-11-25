@@ -1018,8 +1018,13 @@ def test_pressing_run_shows_the_result_in_the_browse_view_s_cards():
     # The run really is the +15% one: its all-in cost is on a card.
     assert any(expected in card for card in cards), expected
 
-    # And the rows and their download came with it.
-    assert app.dataframe
+    # And the rows and their download came with it. The rows are the
+    # page's own HTML table since 11/24, so what is looked for is the
+    # table rather than a dataframe element.
+    assert any(
+        '<table class="cm-table">' in str(block.value)
+        for block in app.markdown
+    ), "no detail table under a custom run"
     assert any(
         type(element).__name__ == "DownloadButton" for element in app.main
     )
