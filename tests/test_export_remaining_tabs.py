@@ -715,7 +715,9 @@ def test_the_hours_columns_are_never_totalled_down_the_log(book, tables):
     tab a leader reads to find out how much work did not get done.
 
     So the log totals only what belongs to exactly one event type, and
-    the hours are totalled in the by-event-type block instead.
+    the hours are added up WITHIN an event type in the by-event-type
+    block instead - per type, on its own row. That block has no total row
+    of its own either, which is the next test.
     """
     events = tables["Coverage Events"]
     doubled = float(events["hours_uncovered"].sum())
@@ -744,6 +746,86 @@ def test_the_hours_columns_are_never_totalled_down_the_log(book, tables):
         if "Hours" in header:
             letter = get_column_letter(headers.index(header) + 1)
             assert sheet[f"{letter}{total_row}"].value is None, header
+
+
+def test_the_by_event_type_block_has_no_total_row(book, tables):
+    """A breakdown is not a second ledger (decided 11/24).
+
+    The three event types partition the same events the log above holds,
+    so an "all event types" row would restate the PLAN-YEAR TOTAL a few
+    rows up: the same events, the same overtime, the same travel, counted
+    a second time on the one tab where a double count has already been
+    found once. The flags that would have written that row are off, and
+    this test is what keeps somebody from turning them back on.
+    """
+    totalled = [
+        header for header, _s, _f, _w, is_total
+        in export.BY_EVENT_TYPE_COLUMNS if is_total
+    ]
+    assert totalled == [], totalled
+
+    sheet = book["Coverage Events"]
+    events = tables["Coverage Events"]
+    by_type = tables["coverage by type"]
+
+    # The block's own rows, found the way a reader finds them: the header
+    # that starts it, after the log it breaks down.
+    header_row = find_header(
+        sheet, "Event type (F2)", export.DETAIL_HEADER_ROW + len(events)
+    )
+    first = header_row + 1
+    last = header_row + len(by_type)
+    # Every row of the block is an event type and nothing else.
+    for row in range(first, last + 1):
+        assert sheet[f"A{row}"].value in set(by_type["event_type"]), row
+
+    # And the two rows after it - where a total row would land - hold
+    # neither a label nor a figure.
+    for row in (last + 1, last + 2):
+        for column in range(1, len(export.BY_EVENT_TYPE_COLUMNS) + 1):
+            value = sheet.cell(row=row, column=column).value
+            if isinstance(value, str) and value.startswith("BY CAUSE"):
+                continue  # the next section's own heading
+            assert value is None, (row, column, value)
+
+
+def test_the_plan_year_total_still_sums_the_log_once(book, tables):
+    """Taking the breakdown's flags off left the real total alone.
+
+    The figures a leader quotes come from the PLAN-YEAR TOTAL row on the
+    log: four live =SUM() cells over travel hours, travel miles, travel
+    cost and overtime cost. Each is evaluated here against the builder's
+    own column sum, so this test fails if the total row moved, lost a
+    column, or started summing the wrong range.
+    """
+    sheet = book["Coverage Events"]
+    events = tables["Coverage Events"]
+    total_row = export.DETAIL_HEADER_ROW + 1 + len(events) + 1
+    assert "PLAN-YEAR TOTAL" in str(sheet[f"A{total_row}"].value)
+
+    headers = [header for header, *_rest in export.COVERAGE_EVENT_COLUMNS]
+    expected = {
+        header: source for header, source, _f, _w, is_total
+        in export.COVERAGE_EVENT_COLUMNS if is_total
+    }
+    assert len(expected) == 4, sorted(expected)
+
+    for header, source in expected.items():
+        letter = get_column_letter(headers.index(header) + 1)
+        formula = sheet[f"{letter}{total_row}"].value
+        assert isinstance(formula, str) and formula.startswith("=SUM("), header
+        got = evaluate(book, "Coverage Events", formula)
+        assert got == pytest.approx(float(events[source].sum()), abs=CENT), header
+
+    # Seven live formulas on the tab, all of them totals, and none of
+    # them in the breakdown: four here and three on ALL CAUSES.
+    sums = [
+        cell.coordinate
+        for row in sheet.iter_rows()
+        for cell in row
+        if isinstance(cell.value, str) and cell.value.startswith("=")
+    ]
+    assert len(sums) == 7, sums
 
 
 def test_the_tab_warns_about_the_double_count_with_measured_figures(book, run):

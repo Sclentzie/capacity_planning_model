@@ -2284,15 +2284,27 @@ def coverage_event_columns():
 
 COVERAGE_EVENT_COLUMNS = coverage_event_columns()
 
+# NOTHING IS TOTALLED HERE, which is why every spec below ends in False
+# (decided 11/24). This block is a BREAKDOWN of the log above it, not a
+# second ledger: its three event types partition the same events, so an
+# "all event types" row would restate the PLAN-YEAR TOTAL sitting a few
+# rows up - the same events, the same overtime, the same travel, counted
+# a second time on the one tab where a double count has already been
+# found once. A reader who wants the plan-year figure reads it where it
+# is written, and a reader who wants the split reads these rows. The
+# hours columns are not totalled for the separate reason the block
+# exists: an uncovered hour appears on the E2 that could not cover it and
+# again on the E3 that accepted it, so adding this column down the page
+# would double it.
 BY_EVENT_TYPE_COLUMNS = (
     ("Event type (F2)", "event_type", None, 14, False),
     ("What it is", "what_it_is", None, 40, False),
-    ("Events", "events", COUNT, 10, True),
+    ("Events", "events", COUNT, 10, False),
     ("Hours short before cover", "hours_short_before_cover", HOURS, 12, False),
     ("Hours covered", "hours_covered", HOURS, 11, False),
     ("Hours still uncovered", "hours_uncovered", HOURS, 12, False),
-    ("Overtime cost", "overtime_cost", MONEY, 13, True),
-    ("Travel cost", "travel_cost", MONEY, 11, True),
+    ("Overtime cost", "overtime_cost", MONEY, 13, False),
+    ("Travel cost", "travel_cost", MONEY, 11, False),
 )
 
 # Spec 6.7's own event types. The wording is the spec's, shortened, and

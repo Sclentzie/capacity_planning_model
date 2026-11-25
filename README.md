@@ -373,7 +373,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 872 tests, about 82 minutes
+# The validation checks: 874 tests, about 82 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -413,7 +413,7 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-872 tests across 25 files: 871 passing, and 1 that fails on purpose and is
+874 tests across 25 files: 873 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
