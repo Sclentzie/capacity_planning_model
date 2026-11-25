@@ -558,12 +558,12 @@ def test_the_baseline_pins_do_not_move(report, baseline):
 
 
 def test_the_gate_does_not_touch_the_machines_invoice(report):
-    """The proof is a labour saving, and only a labour saving.
+    """The proof is a labor saving, and only a labor saving.
 
     The platform fee, the setup and the per-item cost are all the same
     whether or not the gate cleared - proving a machine accurate does not
     make it cheaper to run. So the all-in difference against AI targeted
-    has to be exactly the QA labour, which is also the strongest check
+    has to be exactly the QA labor, which is also the strongest check
     that nothing else moved.
     """
     spend = report["machine_spend"]

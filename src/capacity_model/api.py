@@ -66,7 +66,7 @@ CUSTOM_RUN_KIND = scenarios.KIND_CHOICE
 COMPARISON_MEASURES = (
     ("Scenario", "scenario"),
     ("All-in cost", "total_cost"),
-    ("Labour cost", "labour_cost"),
+    ("Labor cost", "labour_cost"),
     ("Machine cost", "machine_cost"),
     ("Network required FTE", "network_required_fte"),
     ("Overtime hours", "overtime_hours"),
@@ -238,7 +238,7 @@ def turnaround_table(built, assumptions=None):
     return table[front + rest].sort_values("plan_week").reset_index(drop=True)
 
 
-# (cost line, where the money goes). Labour is split into regular pay and
+# (cost line, where the money goes). Labor is split into regular pay and
 # overtime because they are different decisions; the machine's invoice is
 # split into its three real parts (spec 5.4).
 LABOUR_LINES = (
@@ -254,14 +254,14 @@ MACHINE_BASIS = "Automation"
 
 
 def cost_lines_table(built, assumptions=None):
-    """Every line of the plan-year bill, labour and machine together.
+    """Every line of the plan-year bill, labor and machine together.
 
     The point of the table is that it ADDS UP: the amount column sums to
     the all-in cost on the comparison row, which a test checks to the
     cent. A cost view that nearly reconciles is worse than none, because
     the gap is where a reader stops trusting the rest of it.
 
-    Labour by role, because that is the decision a leader makes. The
+    Labor by role, because that is the decision a leader makes. The
     machine's invoice at network scope, because the platform fee is one
     shared fee and splitting it per site would invent a number (5.4).
     """

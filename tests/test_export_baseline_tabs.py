@@ -151,6 +151,13 @@ def test_every_written_cell_is_the_builder_s_own_value(book, tables, name):
             if source is None:
                 continue  # a live formula; checked in its own test
             expected = record.get(source)
+            # A ROLE IS WRITTEN THE WAY A READER SAYS IT (11/23), so the
+            # tie-out compares against the builder's value AS NAMED
+            # rather than against its code. Through the exporter's own
+            # mapping, not a copy of it: a test that spelled the five
+            # names itself would pass while the tab said something else.
+            if export.names_a_role(header):
+                expected = export.shown_role(expected)
             got = written[header]
             if expected is None or (
                 isinstance(expected, float) and expected != expected
@@ -195,6 +202,8 @@ def test_the_surplus_block_is_written_too(book, tables, run):
     for record, written in zip(surplus.to_dict("records"), rows):
         for label, source, _fmt, _width, _total in export.SURPLUS_COLUMNS:
             expected = record[source]
+            if export.names_a_role(label):
+                expected = export.shown_role(expected)
             if isinstance(expected, str):
                 assert written[label] == expected
             else:
@@ -460,7 +469,7 @@ TOTAL_SOURCES = {
         ("Covered hours", "covered_hours"),
         ("Uncovered hours", "uncovered_hours"),
         ("Overtime hours", "overtime_hours"),
-        ("Labour cost", "total_cost"),
+        ("Labor cost", "total_cost"),
     ),
     "Capacity Ledger": (
         ("Hires", "hires"),
@@ -577,7 +586,7 @@ def test_the_hours_gap_formula_is_available_minus_required(book, tables):
 def test_the_detail_totals_equal_the_capacity_scenarios_baseline_row(book, tables):
     """The cross-tab tie, and the strongest form of the Section 9 check.
 
-    Capacity Plan reaches its labour cost by adding 780 weekly role rows.
+    Capacity Plan reaches its labor cost by adding 780 weekly role rows.
     Capacity Scenarios reaches the same figure through summarise() on the
     whole run. The two routes are independent, so if they agree to the
     cent the figure is the model's and not an artefact of either path -
@@ -591,7 +600,7 @@ def test_the_detail_totals_equal_the_capacity_scenarios_baseline_row(book, table
     assert scenario_sheet[f"A{baseline_row}"].value == "Baseline"
 
     for detail, headline, tolerance in (
-        ("Labour cost", "Labour cost", CENT),
+        ("Labor cost", "Labor cost", CENT),
         ("Overtime hours", "Overtime hours", 1e-6),
         ("Uncovered hours", "Uncovered hours", 1e-6),
     ):
@@ -644,9 +653,15 @@ def test_a_service_level_is_only_written_where_somebody_is_waiting(book, tables)
     columns = export.CAPACITY_PLAN_COLUMNS
     rows = written_rows(book, "Capacity Plan", columns, tables["Capacity Plan"])
 
+    # The tab writes a role the way a person says it (11/23), so the
+    # name comes from the same mapping the exporter used rather than
+    # being typed here - a test that spelled it itself would pass while
+    # the workbook said something else.
+    onsite_associate = export.role_names()["onsite_associate"]
+
     live, backlog = 0, 0
     for row in rows:
-        onsite = row["Role"] == "onsite_associate"
+        onsite = row["Role"] == onsite_associate
         if onsite:
             assert row["Phone service level"] is not None, row["Plan week"]
             assert row["Walk-in service level"] is not None
@@ -669,9 +684,10 @@ def test_days_of_inventory_is_written_for_every_back_office_row(book, tables):
     """
     columns = export.CAPACITY_PLAN_COLUMNS
     rows = written_rows(book, "Capacity Plan", columns, tables["Capacity Plan"])
+    onsite_associate = export.role_names()["onsite_associate"]
     written = [
         row for row in rows
-        if row["Role"] != "onsite_associate" and row["Days of inventory"] is not None
+        if row["Role"] != onsite_associate and row["Days of inventory"] is not None
     ]
     assert len(written) == 468
     assert all(row["Days of inventory"] >= 0 for row in written)

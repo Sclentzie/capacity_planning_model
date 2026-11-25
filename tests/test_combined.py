@@ -229,26 +229,26 @@ def test_breadth_and_deflection_are_separated_rather_than_netted(report):
     for the gap would credit the wrong lever, so the report runs the full
     programme with deflection off and names both.
 
-    Each is reported on labour and on all-in, and the PAIR is the
-    finding (11/03). On the labour line breadth looks like the bigger
+    Each is reported on labor and on all-in, and the PAIR is the
+    finding (11/03). On the labor line breadth looks like the bigger
     prize - $51,217 against deflection's $27,511 - and all-in it is the
     only one of the two that loses money, because seventeen more rows buy
     seventeen more setup fees. Deflection reads the same either way: a
     contact that never arrives has no item to pay a fee on.
 
     So the cheaper lever is the one with no machine attached to it, and
-    the labour line on its own would have pointed the other way.
+    the labor line on its own would have pointed the other way.
     """
     split = report["breadth_against_deflection"]
     breadth, deflection = split["breadth_19_rows_vs_2"], split["deflection"]
 
-    assert breadth["labour"] == pytest.approx(51217.37, rel=1e-4)
-    assert deflection["labour"] == pytest.approx(27510.98, rel=1e-4)
-    assert breadth["labour"] > deflection["labour"] > 0
+    assert breadth["labor"] == pytest.approx(51217.37, rel=1e-4)
+    assert deflection["labor"] == pytest.approx(27510.98, rel=1e-4)
+    assert breadth["labor"] > deflection["labor"] > 0
 
     # Deflection is demand-side: it adds nothing to the invoice.
     assert deflection["machine"] == pytest.approx(0.0)
-    assert deflection["all_in"] == pytest.approx(deflection["labour"])
+    assert deflection["all_in"] == pytest.approx(deflection["labor"])
 
     # Breadth is supply-side, and the invoice is bigger than the saving.
     assert breadth["machine"] < 0
@@ -273,7 +273,7 @@ def test_breadth_and_deflection_are_separated_rather_than_netted(report):
 def test_the_headline_cost_is_all_in_with_both_halves_beside_it(report, baseline):
     """Spec 6.4, decided 11/03, and it is the easiest figure to misread.
 
-    6.4's cost formula is LABOUR: regular pay plus overtime. The
+    6.4's cost formula is LABOR: regular pay plus overtime. The
     machine's own invoice - per item, setup, platform - lives in the
     automation table, and until 11/03 it was nowhere in the comparison,
     so an automation scenario's headline was its saving with none of its
@@ -282,14 +282,14 @@ def test_the_headline_cost_is_all_in_with_both_halves_beside_it(report, baseline
     """
     table = report["comparison"]
     for key, built in report["runs"].items():
-        labour = float(built["role_cost"]["total_cost"].sum())
+        labor = float(built["role_cost"]["total_cost"].sum())
         spend = report["machine_spend"][key]["total"]
-        assert report["all_in_cost"][key]["labour"] == pytest.approx(labour)
-        assert report["all_in_cost"][key]["all_in"] == pytest.approx(labour + spend)
+        assert report["all_in_cost"][key]["labor"] == pytest.approx(labor)
+        assert report["all_in_cost"][key]["all_in"] == pytest.approx(labor + spend)
         # And the comparison table agrees with the report.
-        assert table.loc[key, "labour_cost"] == pytest.approx(labour)
+        assert table.loc[key, "labour_cost"] == pytest.approx(labor)
         assert table.loc[key, "machine_cost"] == pytest.approx(spend)
-        assert table.loc[key, "total_cost"] == pytest.approx(labour + spend)
+        assert table.loc[key, "total_cost"] == pytest.approx(labor + spend)
         # No automation, no invoice.
         if not automation.enabled(built["assumptions"]):
             assert spend == 0.0
@@ -301,24 +301,24 @@ def test_the_headline_cost_is_all_in_with_both_halves_beside_it(report, baseline
             assert table.loc[key, "total_cost"] > table.loc[key, "labour_cost"]
 
 
-def test_the_machines_invoice_is_the_same_order_as_the_labour_it_saves(report):
+def test_the_machines_invoice_is_the_same_order_as_the_labor_it_saves(report):
     """The finding, and the reason the verdict turns over (measured 11/02).
 
-    On top of +15% volume the targeted machine saves 9,788 of labour and
+    On top of +15% volume the targeted machine saves 9,788 of labor and
     costs 44,465 to run, so all-in it is about 34,700 WORSE than doing
-    nothing. The full programme saves more labour and costs far more:
+    nothing. The full programme saves more labor and costs far more:
     88,516 against 197,170, about 108,700 worse.
     """
     against = report["against_volume_only"]
 
     targeted = against["combined"]
-    assert targeted["labour"] == pytest.approx(-9787.95, rel=1e-4)
+    assert targeted["labor"] == pytest.approx(-9787.95, rel=1e-4)
     assert targeted["machine"] == pytest.approx(44465.0, rel=1e-3)
     assert targeted["all_in"] == pytest.approx(34677.0, rel=1e-3)
     assert targeted["all_in"] > 0
 
     full = against["combined_ai_100"]
-    assert full["labour"] < targeted["labour"]  # saves more labour
+    assert full["labor"] < targeted["labor"]  # saves more labor
     assert full["all_in"] > targeted["all_in"]  # and still loses more money
     assert full["all_in"] == pytest.approx(108654.0, rel=1e-3)
 
@@ -331,17 +331,17 @@ def test_the_machines_invoice_is_the_same_order_as_the_labour_it_saves(report):
 def test_the_same_machine_does_pay_at_the_lower_volume(report):
     """Which is what makes the combined verdict a finding and not a bug.
 
-    AI targeted on its own IS worth doing: 57,360 of labour against a
+    AI targeted on its own IS worth doing: 57,360 of labor against a
     43,280 invoice, about 14,080 to the good. The identical machine loses
     money on top of +15% volume, and the difference is not the machine -
-    it is what the labour saving lands on. At baseline volume it cancels
+    it is what the labor saving lands on. At baseline volume it cancels
     two hiring classes (8 hires against 6). At +15% the plan is already
     hiring 23 people and 0.74 FTE cancels none of them, so the saving
     collapses to overtime.
     """
     against = report["against_baseline"]
     alone = against["ai_targeted_only"]
-    assert alone["labour"] == pytest.approx(-57360.0, rel=1e-3)
+    assert alone["labor"] == pytest.approx(-57360.0, rel=1e-3)
     assert alone["machine"] == pytest.approx(43280.0, rel=1e-3)
     assert alone["all_in"] == pytest.approx(-14080.0, rel=1e-2)
     assert alone["all_in"] < 0
@@ -400,7 +400,7 @@ def test_re_picking_absorbs_more_hours_and_saves_no_more_money(report):
     """The sharpest thing in this scenario, and it is a WFM point.
 
     Adding W14 removes another 0.23 FTE of requirement - so the ranking
-    was right, the row does pay per item. And the labour cost does not
+    was right, the row does pay per item. And the labor cost does not
     move by a cent, because the hours it frees sit INSIDE the QA team's
     existing paid hours: nobody is laid off and no overtime hour is
     avoided, so there is no cash behind the hours.
@@ -417,7 +417,7 @@ def test_re_picking_absorbs_more_hours_and_saves_no_more_money(report):
     absorbed = report["rise"]["back_office_required_fte"]["absorbed"]
     assert absorbed["combined_repicked"]["absorbed"] > absorbed["combined"]["absorbed"]
 
-    # Identical LABOUR cost, identical overtime, identical uncovered -
+    # Identical LABOR cost, identical overtime, identical uncovered -
     # the all-in column is deliberately not in this list, because the
     # bigger invoice is exactly what makes re-picking worse.
     for column in ("labour_cost", "overtime_hours", "uncovered_hours"):
@@ -432,8 +432,8 @@ def test_re_picking_absorbs_more_hours_and_saves_no_more_money(report):
     against = report["against_volume_only"]
     assert against["combined_repicked"]["machine"] > against["combined"]["machine"]
     assert against["combined_repicked"]["all_in"] > against["combined"]["all_in"]
-    assert against["combined_repicked"]["labour"] == pytest.approx(
-        against["combined"]["labour"]
+    assert against["combined_repicked"]["labor"] == pytest.approx(
+        against["combined"]["labor"]
     )
 
 
@@ -507,5 +507,5 @@ def test_the_baseline_is_untouched_by_any_of_it(report):
     assert report["machine_spend"]["baseline"]["total"] == 0.0
     assert "work_kind" not in built["prepared"]["required"].columns
     assert report["all_in_cost"]["baseline"]["all_in"] == pytest.approx(
-        report["all_in_cost"]["baseline"]["labour"]
+        report["all_in_cost"]["baseline"]["labor"]
     )

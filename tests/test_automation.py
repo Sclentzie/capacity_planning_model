@@ -20,7 +20,7 @@ Task 4f. The Section 9 checks this file owns:
 Plus the four points Siri settled on 10/27: W17's notarization is the R8
 path, the $500 platform fee is one shared fee split by automated items,
 Next Dollar ranks by savings per dollar AFTER fixed costs, and any weekly
-automation-against-by-hand figure carries the human-in-the-loop labour and
+automation-against-by-hand figure carries the human-in-the-loop labor and
 the platform share so both sides cover the same items and the same work.
 A fifth, settled later the same day: QA review hours are priced at the QA
 team's rate everywhere, including 6.6's per-item formula, so the per-item
@@ -1028,13 +1028,13 @@ def test_the_weekly_comparison_covers_the_same_items_both_sides(
     )
 
 
-def test_the_weekly_comparison_includes_the_loop_labour_and_the_platform_share(
+def test_the_weekly_comparison_includes_the_loop_labor_and_the_platform_share(
     switched_on, sites, built
 ):
     """Decided 10/27: the automation side carries the work that comes back.
 
     Per-item fee, setup share, platform share, and the exception and QA
-    hours at a human's productive-hour cost. Leaving the loop labour off
+    hours at a human's productive-hour cost. Leaving the loop labor off
     would be comparing a machine that never needs a second look against
     people who do; leaving the platform share off would hand a leader a
     number that gets worse the moment finance sees it.
@@ -1057,7 +1057,7 @@ def test_the_weekly_comparison_includes_the_loop_labour_and_the_platform_share(
         rel=1e-9,
     )
 
-    # The loop labour is priced at the role that is actually paid for it,
+    # The loop labor is priced at the role that is actually paid for it,
     # so the QA hours go at the QA team's rate (spec 5.5), not Tier 1's.
     qa_hour = plan.productive_hour_cost("qa_specialist", switched_on)
     assert result["qa_cost"] == pytest.approx(result["qa_hours"] * qa_hour, rel=1e-9)
@@ -1071,14 +1071,14 @@ def test_the_weekly_comparison_includes_the_loop_labour_and_the_platform_share(
     #
     # Nothing about the machine changed. What changed is the honest value
     # of the items it takes: a 3-minute intake item is worth $1.94 by hand,
-    # and the machine's fee, exception labour, QA sample and share of the
+    # and the machine's fee, exception labor, QA sample and share of the
     # setup come to more than that. Automation was only ever winning this
     # row on a saving measured against an item it was not doing.
     assert result["saving"] < 0
     # Not by much, and not because of the per-item fee: the fixed costs
     # are the whole story on this row.
     assert result["item_cost"] < result["setup_cost"] + result["platform_cost"]
-    # The loop labour is still a sixth of the machine's weekly cost - down
+    # The loop labor is still a sixth of the machine's weekly cost - down
     # from a quarter, because the exception time halved with the easy-item
     # decision (10/28). Smaller, and still far too big to leave out.
     loop_share = (result["exception_cost"] + result["qa_cost"]) / result[

@@ -609,3 +609,64 @@ def test_the_change_line_is_bold_at_every_width(page, expected_cards, width):
         page.set_viewport_size({"width": 1600, "height": 1400})
         page.wait_for_timeout(500)
 
+
+# ---------------------------------------------------------------------------
+# The kind key's swatch (Siri, 11/23)
+# ---------------------------------------------------------------------------
+
+# Every swatch in the kind key: how big the browser actually drew it, and
+# what it drew it in.
+SWATCH_BOXES = """
+  () => Array.from(document.querySelectorAll('.cm-key-table .cm-swatch'))
+    .map(swatch => {
+      const box = swatch.getBoundingClientRect();
+      const style = getComputedStyle(swatch);
+      return {width: box.width, height: box.height,
+              display: style.display,
+              background: style.backgroundColor};
+    })
+"""
+
+# A swatch has to read as a block of colour rather than as a rule under
+# the word beside it. Ten pixels each way is the floor; the stylesheet
+# asks for about fifteen.
+MIN_SWATCH = 10.0
+
+
+def test_the_kind_key_swatch_is_a_block_and_not_a_line(page):
+    """IT WAS A THIN LINE, AND ONLY HERE (Siri's walkthrough, 11/23).
+
+    The same .cm-swatch class is used by both keys and looked right in
+    one of them, which is what made this worth measuring rather than
+    reading. An inline element has no width or height - the browser
+    ignores both - and in this key the swatch is a span inside a table
+    cell, so 0.85rem square was silently dropped and all that rendered
+    was a background on a zero-height box. In the region key the same
+    class is a flex item, and a flex item is blockified, so it drew
+    correctly by luck.
+
+    A stylesheet cannot be read to rule that out: the rule was there and
+    correct, and the browser was entitled to ignore it. Only the box the
+    browser drew says which happened.
+    """
+    page.set_viewport_size({"width": 1600, "height": 1400})
+    page.wait_for_timeout(400)
+    try:
+        pick(page, views.COMPARE_VIEW)
+        page.wait_for_selector(".cm-key-table .cm-swatch", timeout=20000)
+        swatches = page.evaluate(SWATCH_BOXES)
+
+        assert len(swatches) == len(views.kind_key_rows()) == 3, swatches
+        for swatch in swatches:
+            assert swatch["display"] != "inline", (
+                "an inline swatch has no width or height: " + str(swatch)
+            )
+            assert swatch["width"] >= MIN_SWATCH, swatch
+            assert swatch["height"] >= MIN_SWATCH, swatch
+            # Square-ish, so it reads as a chip rather than as a bar.
+            assert abs(swatch["width"] - swatch["height"]) <= 2.0, swatch
+            # And actually carrying a colour, not an empty box.
+            assert swatch["background"].startswith("rgba("), swatch
+            assert not swatch["background"].endswith(", 0)"), swatch
+    finally:
+        pick(page, views.ONE_RUN_VIEW)

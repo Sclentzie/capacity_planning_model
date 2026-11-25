@@ -340,11 +340,11 @@ def declared_site_keys(scenario):
 def machine_spend(built):
     """The automation's OWN plan-year invoice: per item, setup, platform.
 
-    Spec 6.4's cost table is LABOUR - regular pay plus overtime - so the
+    Spec 6.4's cost table is LABOR - regular pay plus overtime - so the
     comparison table's total_cost is what the people cost and not what
     the programme cost. For scenarios that only move people around, the
     two are the same thing. For an automation scenario they are not, and
-    reporting the labour line alone would credit the machine with its
+    reporting the labor line alone would credit the machine with its
     saving and bill it for nothing.
 
     Found 11/02 and worth saying plainly: on these volumes the invoice is
@@ -376,10 +376,10 @@ def machine_spend(built):
 
 
 def all_in_cost(built):
-    """Labour plus the machine's own invoice, for one run."""
-    labour = float(built["role_cost"]["total_cost"].sum())
+    """Labor plus the machine's own invoice, for one run."""
+    labor = float(built["role_cost"]["total_cost"].sum())
     machine = machine_spend(built)["total"]
-    return {"labour": labour, "machine": machine, "all_in": labour + machine}
+    return {"labor": labor, "machine": machine, "all_in": labor + machine}
 
 
 def run_scenario(scenario, baseline=None, sites=None, demand=None):
@@ -458,21 +458,21 @@ def summarise(built, assumptions=None, sites=None):
 
     # THREE cost columns, not one (spec 6.4, decided 11/03).
     #
-    # Spec 6.4's cost is LABOUR: regular pay plus overtime. The machine's
+    # Spec 6.4's cost is LABOR: regular pay plus overtime. The machine's
     # own invoice - per item, setup and the shared platform fee (5.4) -
     # is a real cheque the operation writes and it was nowhere in this
     # table, so every automation scenario's headline was its saving with
     # none of its cost.
     #
     # Measured 11/02 and the reason this changed: on these volumes the
-    # invoice is the same ORDER as the labour it saves. AI targeted saves
-    # $57,360 of labour and costs $43,280 to run; on top of +15% volume
+    # invoice is the same ORDER as the labor it saves. AI targeted saves
+    # $57,360 of labor and costs $43,280 to run; on top of +15% volume
     # it saves $9,788 and costs $44,465, which turns a saving into a
     # loss. One number could not be both, so there are three and the
     # all-in one is the headline.
     #
     # Nothing changes for a scenario with no machine: its machine cost is
-    # zero and all-in IS labour, which is why the baseline pins and every
+    # zero and all-in IS labor, which is why the baseline pins and every
     # people-only scenario are untouched by this.
     labour_cost = role_cost["total_cost"].sum()
     machine_cost = machine_spend(built)["total"]
@@ -1000,7 +1000,7 @@ def write_sweep(table, assumptions=None):
 # The report answers one question in two different ways, because the two
 # answers are months apart and a leader needs both.
 #
-#   THE LABOUR-VALUE BREAK-EVEN. Hours saved, priced at the rate of
+#   THE LABOR-VALUE BREAK-EVEN. Hours saved, priced at the rate of
 #     whoever would have worked them, against the project's added cost.
 #     This is the economics of the project itself and the number the spec
 #     asks for.
@@ -1117,7 +1117,7 @@ def digitization_report(baseline=None, sites=None):
             record[f"{code.lower()}_hours_saved"]
             for code in DIGITIZATION_WORK_TYPES
         )
-        record["labour_saving"] = saving
+        record["labor_saving"] = saving
         record["added_cost"] = added
         record["net_this_week"] = saving - added
         record["cumulative_saving"] = cumulative_saving
@@ -1168,7 +1168,7 @@ def digitization_report(baseline=None, sites=None):
     if inside is None:
         live = table[table["cumulative_added_cost"] > 0]
         weeks_live = np.arange(1, len(live) + 1, dtype=float)
-        savings = live["labour_saving"].to_numpy(dtype=float)
+        savings = live["labor_saving"].to_numpy(dtype=float)
         # Slope through the origin: a project that has converted nothing
         # saves nothing, so the line is not free to pick an intercept.
         slope = float((weeks_live * savings).sum() / (weeks_live ** 2).sum())
@@ -1213,7 +1213,7 @@ def digitization_report(baseline=None, sites=None):
         return float(frame[frame["work_type"] == code]["work_items"].sum())
 
     avoided_requests = items_of(base_work, "W11") - items_of(run_work, "W11")
-    total_saving = float(table["labour_saving"].sum())
+    total_saving = float(table["labor_saving"].sum())
     converted_total = float(table["converted_this_week"].sum())
     per_chart = None
     if avoided_requests > 0 and converted_total > 0:
@@ -1675,8 +1675,8 @@ def proof_of_concept_report(baseline=None, sites=None):
         ),
     }
 
-    # Labour and the machine's invoice, reported apart and together. The
-    # gate moves only the labour line - it buys a smaller review sample,
+    # Labor and the machine's invoice, reported apart and together. The
+    # gate moves only the labor line - it buys a smaller review sample,
     # not a cheaper platform - so the all-in figures for the two gated
     # runs differ from AI targeted by the QA saving and nothing else.
     cost = {key: all_in_cost(built) for key, built in runs.items()}
@@ -1693,11 +1693,11 @@ def proof_of_concept_report(baseline=None, sites=None):
         "gates": gates,
         "loop_hours": loop,
         "sign_off": sign_off,
-        "cost": {key: entry["labour"] for key, entry in cost.items()},
+        "cost": {key: entry["labor"] for key, entry in cost.items()},
         "all_in_cost": cost,
         "machine_spend": {key: machine_spend(built) for key, built in runs.items()},
         "cost_vs_ai_targeted": {
-            key: cost[key]["labour"] - cost["ai_targeted"]["labour"] for key in cost
+            key: cost[key]["labor"] - cost["ai_targeted"]["labor"] for key in cost
         },
         "all_in_vs_ai_targeted": {
             key: cost[key]["all_in"] - cost["ai_targeted"]["all_in"] for key in cost
@@ -1910,11 +1910,11 @@ def combined_report(baseline=None, sites=None):
     # setup fee per row, deflection is demand-side and costs nothing per
     # row but assumes requesters self-serve.
     #
-    # Each reported on LABOUR and on ALL-IN, and the pair is the finding
-    # (11/03). Breadth saves $51,217 of labour and buys seventeen more
+    # Each reported on LABOR and on ALL-IN, and the pair is the finding
+    # (11/03). Breadth saves $51,217 of labor and buys seventeen more
     # setups to do it, so all-in it COSTS about $101,000: going wide is a
-    # worse decision than it looks on the labour line alone. Deflection
-    # saves $27,511 of labour and adds nothing to the invoice - the
+    # worse decision than it looks on the labor line alone. Deflection
+    # saves $27,511 of labor and adds nothing to the invoice - the
     # contact never arrives, so there is no item to pay a fee on - so it
     # is the same number either way. The cheaper lever is the one with no
     # machine attached to it.
@@ -1924,7 +1924,7 @@ def combined_report(baseline=None, sites=None):
                 table.loc[narrower, column] - table.loc[wider, column]
             )
             for part, column in (
-                ("labour", "labour_cost"),
+                ("labor", "labour_cost"),
                 ("machine", "machine_cost"),
                 ("all_in", "total_cost"),
             )
@@ -1937,13 +1937,13 @@ def combined_report(baseline=None, sites=None):
 
     # --- the all-in cost, which reverses the ordering -------------------
     #
-    # The comparison table's total_cost is LABOUR (spec 6.4). Measured
+    # The comparison table's total_cost is LABOR (spec 6.4). Measured
     # 11/02, the machine's own invoice on these volumes is the same order
-    # as the labour it saves, so the two lines have to be read together:
-    # the targeted machine saves about ten thousand of labour on top of
+    # as the labor it saves, so the two lines have to be read together:
+    # the targeted machine saves about ten thousand of labor on top of
     # +15% and costs about forty-four thousand to run.
     #
-    # And the reason the labour line is so thin is the held roster (spec
+    # And the reason the labor line is so thin is the held roster (spec
     # 7, 10/27). Regular pay is headcount x paid hours, so required hours
     # falling is only cash where it cancels an overtime hour or a hiring
     # class. At +15% the plan is already hiring 23 people and the machine
@@ -1952,7 +1952,7 @@ def combined_report(baseline=None, sites=None):
     machine = {key: machine_spend(built) for key, built in runs.items()}
     against_volume = {
         key: {
-            "labour": entry["labour"] - cost["volume_only"]["labour"],
+            "labor": entry["labor"] - cost["volume_only"]["labor"],
             "machine": entry["machine"] - cost["volume_only"]["machine"],
             "all_in": entry["all_in"] - cost["volume_only"]["all_in"],
         }
@@ -1960,7 +1960,7 @@ def combined_report(baseline=None, sites=None):
     }
     against_baseline = {
         key: {
-            "labour": entry["labour"] - cost["baseline"]["labour"],
+            "labor": entry["labor"] - cost["baseline"]["labor"],
             "machine": entry["machine"] - cost["baseline"]["machine"],
             "all_in": entry["all_in"] - cost["baseline"]["all_in"],
         }
@@ -2208,7 +2208,7 @@ def main():
         # its two halves indented under it so nobody has to work out which
         # of three cost numbers they are looking at.
         ("ALL-IN cost", "total_cost", "{:>22,.0f}"),
-        ("  labour", "labour_cost", "{:>22,.0f}"),
+        ("  labor", "labour_cost", "{:>22,.0f}"),
         ("  machine", "machine_cost", "{:>22,.0f}"),
         ("all-in per request", "cost_per_request", "{:>22.2f}"),
         ("hiring classes", "hiring_classes", "{:>22d}"),
@@ -2235,7 +2235,7 @@ def main():
         if row.scenario == reference["scenario"]:
             continue
         # The all-in change, with the machine's share named: a scenario
-        # that saves labour and spends more than it saved should not be
+        # that saves labor and spends more than it saved should not be
         # able to print a negative number here (spec 6.4, 11/03).
         print(
             f"  {row.scenario:<22}"

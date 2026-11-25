@@ -51,9 +51,9 @@ import re
 
 import pytest
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
+from openpyxl.utils import column_index_from_string, get_column_letter
 
-from capacity_model import config, export, scenarios
+from capacity_model import config, export, scenarios, views
 
 
 # A reference to one cell, with or without Excel's absolute-$ markers, and
@@ -116,7 +116,7 @@ def evaluate(book, sheet_name, formula, depth=0):
     could slip through the test that exists to catch wrong formulas.
 
     CHAINS ARE RESOLVED, because the workbook has them by design and Excel
-    resolves them: all-in cost is a formula over written labour and
+    resolves them: all-in cost is a formula over written labor and
     machine, so "all-in vs baseline" differences two formulas, and the
     Summary then references that. Found 11/03 by writing this evaluator
     one level deep first and watching it reject the real workbook - the
@@ -345,11 +345,11 @@ def test_the_baseline_leads_the_table_because_the_formulas_point_at_it(book):
 # ---------------------------------------------------------------------------
 
 
-def test_the_all_in_formula_is_labour_plus_machine(book, comparison):
+def test_the_all_in_formula_is_labor_plus_machine(book, comparison):
     """The one TOTAL on the tab, and spec 6.4's whole point made visible.
 
     All-in is deliberately NOT written as a value: it is a formula over the
-    two halves, so a reader who doubts that labour alone misleads can see
+    two halves, so a reader who doubts that labor alone misleads can see
     the sum in the formula bar.
     """
     sheet = book["Capacity Scenarios"]
@@ -443,7 +443,7 @@ def test_a_known_figure_survives_the_whole_chain(book, comparison):
     )
     assert all_in == pytest.approx(980.0, abs=1.0)
     assert turnaround == pytest.approx(0.139, abs=0.001)
-    # No machine in this scenario, so all-in is labour.
+    # No machine in this scenario, so all-in is labor.
     assert sheet[f"{export.SCENARIO_LETTERS['Machine cost']}{row}"].value == 0.0
 
 
@@ -582,7 +582,7 @@ def test_the_summary_says_what_all_in_cost_means(book, baseline):
         assert note in text, note[:50]
 
     # The four things a reader has to know before quoting a figure.
-    assert "ALL-IN COST = labour + machine" in text
+    assert "ALL-IN COST = labor + machine" in text
     assert "SYNTHETIC DATA" in text
     assert "TURNAROUND is the requester's view" in text
     assert "THE ROSTER IS HELD" in text
@@ -652,7 +652,7 @@ def test_money_hours_and_days_each_have_their_own_format(book):
     fmt = lambda header: sheet[f"{export.SCENARIO_LETTERS[header]}{row}"].number_format
 
     assert fmt("All-in cost").startswith("$")
-    assert fmt("Labour cost").startswith("$")
+    assert fmt("Labor cost").startswith("$")
     assert fmt("Machine cost").startswith("$")
     assert fmt("Overtime hours") == export.HOURS
     assert fmt("Uncovered hours") == export.HOURS
@@ -662,6 +662,218 @@ def test_money_hours_and_days_each_have_their_own_format(book):
     assert len({fmt("All-in cost"), fmt("Overtime hours"), fmt(
         "Requester turnaround, mean days"
     )}) == 3
+
+
+# ---------------------------------------------------------------------------
+# The workbook wears the dashboard's palette (Siri, 11/23)
+#
+# Two products was what it looked like before: a navy-headed spreadsheet
+# and a teal page. A reader who opens the file after reading the page
+# should not have to wonder whether they are looking at the same model.
+# ---------------------------------------------------------------------------
+
+
+def test_every_header_row_wears_the_dashboard_teal(book):
+    """One accent, in one place, used by both.
+
+    Checked on every tab rather than on one, because a header fill is
+    exactly the kind of thing that gets set per writer and then drifts -
+    and a workbook in two colours is the first thing that makes it look
+    unowned.
+    """
+    seen = 0
+    for name in export.BUILT_TABS:
+        sheet = book[name]
+        for row in sheet.iter_rows():
+            for cell in row:
+                fill = cell.fill
+                if fill is None or fill.fgColor is None:
+                    continue
+                rgb = fill.fgColor.rgb
+                if not isinstance(rgb, str) or rgb in ("00000000",):
+                    continue
+                if cell.font and cell.font.color and str(
+                    cell.font.color.rgb
+                ).endswith("FFFFFF"):
+                    # A white-on-colour cell is a header, and the only
+                    # colour a header may wear is the page's accent.
+                    assert rgb.endswith(export.HEADER_COLOUR), (
+                        name, cell.coordinate, rgb,
+                    )
+                    assert cell.font.bold, (name, cell.coordinate)
+                    seen += 1
+    assert seen > 100, seen
+    assert f"#{export.HEADER_COLOUR}".lower() == views.ACCENT_COLOURS[
+        views.LIGHT_MODE
+    ].lower()
+
+
+def test_the_scope_cell_carries_its_region_on_every_tab_that_has_one(book):
+    """North, South and the back office, as the page tints them.
+
+    The tint is on the SCOPE CELL and nothing else in the row: a tinted
+    row would read as a verdict on the figures in it, which is a claim
+    the model never made.
+    """
+    tabs = {
+        "Capacity Plan": export.CAPACITY_PLAN_COLUMNS,
+        "Capacity Ledger": export.CAPACITY_LEDGER_COLUMNS,
+        "Hiring Plan": export.HIRING_PLAN_COLUMNS,
+    }
+    regions = export.scope_regions()
+    for name, columns in tabs.items():
+        sheet = book[name]
+        headers = [header for header, *_rest in columns]
+        if export.SCOPE_HEADER not in headers:
+            continue
+        letter = get_column_letter(headers.index(export.SCOPE_HEADER) + 1)
+        first = export.DETAIL_HEADER_ROW + 1
+        seen = set()
+        for row in range(first, sheet.max_row + 1):
+            value = sheet[f"{letter}{row}"].value
+            if value not in regions:
+                continue
+            expected = export.SCOPE_TINT_COLOURS[regions[value]]
+            assert sheet[f"{letter}{row}"].fill.fgColor.rgb.endswith(expected), (
+                name, row, value,
+            )
+            seen.add(regions[value])
+        assert seen, name
+
+
+def test_a_run_s_name_carries_the_kind_it_declared(book, result):
+    """Choice, risk, sensitivity - coloured as the Compare-all table is.
+
+    ON THE NAME CELL, because this tab has no Kind column: spec Section 8
+    names its columns, and adding one is Siri's call, not the exporter's.
+    The italics stay on a sensitivity as well, because a sensitivity is
+    the one kind that is not a proposal at all and a colour alone would
+    leave that to whoever remembers the key.
+    """
+    sheet = book["Capacity Scenarios"]
+    comparison = result["comparison"]
+    kinds = dict(zip(comparison["scenario"], comparison["kind"]))
+    letter = export.SCENARIO_LETTERS["Scenario"]
+
+    seen = set()
+    for row in range(
+        export.SCENARIO_FIRST_DATA_ROW,
+        export.SCENARIO_FIRST_DATA_ROW + len(comparison),
+    ):
+        cell = sheet[f"{letter}{row}"]
+        kind = kinds[cell.value]
+        if cell.value == "Baseline":
+            # The reference row keeps its gray band across its whole
+            # width: every difference column on the tab points at it.
+            assert cell.fill.fgColor.rgb.endswith("EDEDED")
+            continue
+        assert cell.fill.fgColor.rgb.endswith(
+            export.KIND_TINT_COLOURS[kind]
+        ), (cell.value, kind)
+        if kind == scenarios.KIND_SENSITIVITY:
+            assert cell.font.italic, cell.value
+        seen.add(kind)
+    assert seen == set(scenarios.KINDS)
+
+
+def test_no_role_code_reaches_a_reader(book):
+    """"tier_1" in a cell is the model talking to itself (Siri, 11/23).
+
+    Every string on every tab, not just the Role columns: a code can
+    arrive in a sentence as easily as in a cell, and this file gets
+    forwarded to people with no glossary. The CSV download is the other
+    way round on purpose, and its own test says so.
+    """
+    codes = set(export.role_names())
+    for name in book.sheetnames:
+        if name == ASSUMPTIONS_TAB:
+            continue
+        sheet = book[name]
+        for row in sheet.iter_rows():
+            for cell in row:
+                if not isinstance(cell.value, str):
+                    continue
+                for code in codes:
+                    assert code not in cell.value, (
+                        name, cell.coordinate, code, cell.value[:60],
+                    )
+
+
+# THE ONE TAB THAT KEEPS THE CODES, and it is not an oversight.
+#
+# Assumptions is a record of the input FILES: every row is a YAML key and
+# the value used for it, so that a figure anywhere else in the workbook
+# can be traced back to the line it came from. `supply.per_site_roles` is
+# a list of codes in assumptions.yaml, and writing it out as display
+# names would make the tab a description of the inputs rather than a copy
+# of them - which is the one thing it is for.
+ASSUMPTIONS_TAB = "Assumptions"
+
+
+def test_the_assumptions_tab_keeps_the_codes_because_it_is_the_inputs(book):
+    """Traceability beats readability on exactly this one tab."""
+    sheet = book[ASSUMPTIONS_TAB]
+    codes = set(export.role_names())
+    found = [
+        cell.value
+        for row in sheet.iter_rows()
+        for cell in row
+        if isinstance(cell.value, str) and any(code in cell.value for code in codes)
+    ]
+    assert found, "the tab no longer shows the roles its YAML keys name"
+    # And the tab says what it is, so a reader knows why it reads
+    # differently from every other one.
+    head = " ".join(
+        str(sheet[f"A{row}"].value) for row in range(1, 5)
+        if sheet[f"A{row}"].value
+    )
+    assert "Assumptions" in head
+
+
+def test_nothing_in_the_workbook_says_labour(book):
+    """US spelling everywhere a reader looks (Siri, 11/23).
+
+    The stored measure is still `labour_cost` and deliberately so - it is
+    a key in the saved results file, and renaming it would be a migration
+    rather than a spelling fix. Nothing a reader sees carries it.
+    """
+    for name in book.sheetnames:
+        sheet = book[name]
+        for row in sheet.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str):
+                    assert "labour" not in cell.value.lower(), (
+                        name, cell.coordinate, cell.value[:60],
+                    )
+
+
+def test_no_cell_is_wider_than_the_column_it_sits_in(book):
+    """The #### test, measured rather than assumed.
+
+    Every written figure, under its own number format, against its own
+    column. A width that was a good guess is still a guess; this is the
+    measurement.
+    """
+    for name in export.BUILT_TABS:
+        sheet = book[name]
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.row <= export.DETAIL_HEADER_ROW:
+                    continue
+                needs = export.shown_width(cell.value, cell.number_format)
+                if needs is None:
+                    continue
+                # A WRAPPED CELL CANNOT SHOW ####. It grows downwards
+                # instead, which is the whole reason the findings and the
+                # HOW TO READ notes are wrapped: they are prose, and
+                # prose is not a figure that can be deleted by a column
+                # being too narrow.
+                if cell.alignment is not None and cell.alignment.wrap_text:
+                    continue
+                width = sheet.column_dimensions[cell.column_letter].width
+                assert needs <= width, (
+                    name, cell.coordinate, needs, width, str(cell.value)[:40],
+                )
 
 
 def test_every_column_has_a_width_so_nothing_shows_as_hashes(book):

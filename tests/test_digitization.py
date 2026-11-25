@@ -629,7 +629,7 @@ def test_the_report_charges_every_live_week_and_no_dead_one(report, switched_on)
         w["cumulative_added_cost"], w["added_cost"].cumsum(), rtol=1e-12
     )
     np.testing.assert_allclose(
-        w["cumulative_saving"], w["labour_saving"].cumsum(), rtol=1e-12
+        w["cumulative_saving"], w["labor_saving"].cumsum(), rtol=1e-12
     )
     np.testing.assert_allclose(
         w["cumulative_net_cost"],
@@ -724,7 +724,7 @@ def test_the_break_even_request_probability_answers_the_real_question(report):
     # Derived from the weekly table, so this ties to it exactly.
     weekly = report["weekly"]
     assert pc["value_of_one_avoided_paper_pull"] == pytest.approx(
-        weekly["labour_saving"].sum() / pc["avoided_paper_pulls_in_the_plan_year"]
+        weekly["labor_saving"].sum() / pc["avoided_paper_pulls_in_the_plan_year"]
     )
     assert pc["value_of_one_avoided_paper_pull"] == pytest.approx(16.84, abs=0.05)
 

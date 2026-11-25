@@ -151,6 +151,13 @@ def test_every_written_cell_is_the_builder_s_own_value(book, tables, name):
             if source is None:
                 continue
             expected = record.get(source)
+            # A ROLE IS WRITTEN THE WAY A READER SAYS IT (11/23), so the
+            # tie-out compares against the builder's value AS NAMED
+            # rather than against its code. Through the exporter's own
+            # mapping, not a copy of it: a test that spelled the five
+            # names itself would pass while the tab said something else.
+            if export.names_a_role(header):
+                expected = export.shown_role(expected)
             got = written[header]
             if expected is None or (
                 isinstance(expected, float) and math.isnan(expected)
@@ -460,12 +467,12 @@ def test_the_machine_side_reconciles_to_the_run_s_own_invoice(tables, result):
     assert fixed > 5 * fee
 
 
-def test_the_total_does_not_reconcile_to_the_labour_saving_and_the_gap_is_named(
+def test_the_total_does_not_reconcile_to_the_labor_saving_and_the_gap_is_named(
     tables, result, book
 ):
     """The reconciliation Siri expected, measured - and it does NOT hold.
 
-    Asked for: the total should reconcile to the AI 100% run's labour
+    Asked for: the total should reconcile to the AI 100% run's labor
     saving less its machine cost. It does not. The run's figure is
     -$141,312 and the tab's is -$87,770, a gap of $53,543 on a $141,000
     number - 38%, far too large to be rounding.
@@ -474,8 +481,8 @@ def test_the_total_does_not_reconcile_to_the_labour_saving_and_the_gap_is_named(
     finding rather than an error:
 
         gap = the hours value this table frees
-              - the exception and QA labour the machine hands back
-              - the labour saving the payroll actually banked
+              - the exception and QA labor the machine hands back
+              - the labor saving the payroll actually banked
 
     The table prices every freed hour at its loaded rate. The run only
     banks a saving where the hour cancels an overtime hour or a hiring
@@ -495,9 +502,9 @@ def test_the_total_does_not_reconcile_to_the_labour_saving_and_the_gap_is_named(
         baseline, baseline["assumptions"], baseline["sites"]
     )
 
-    labour_saving = base_summary["labour_cost"] - ai_summary["labour_cost"]
+    labor_saving = base_summary["labour_cost"] - ai_summary["labour_cost"]
     machine_cost = ai_summary["machine_cost"]
-    run_figure = labour_saving - machine_cost
+    run_figure = labor_saving - machine_cost
     tab_figure = float(priced["saving_on_automated_items"].sum())
 
     # It does not reconcile, and the shortfall is material.
@@ -513,13 +520,13 @@ def test_the_total_does_not_reconcile_to_the_labour_saving_and_the_gap_is_named(
     human = total("human_cost_per_item")
     exception = total("automated_exception_cost")
     qa = total("automated_qa_cost")
-    assert gap == pytest.approx(human - exception - qa - labour_saving, abs=CENT)
+    assert gap == pytest.approx(human - exception - qa - labor_saving, abs=CENT)
 
     # Which is to say: the value of the hours freed, net of what the
     # machine hands back, against what the payroll actually released.
     freed = human - exception - qa
-    assert freed > labour_saving
-    assert freed - labour_saving == pytest.approx(gap, abs=CENT)
+    assert freed > labor_saving
+    assert freed - labor_saving == pytest.approx(gap, abs=CENT)
 
     # And the human side of the table ties to the required hours the run
     # frees, priced at each role's loaded rate - so the discrepancy sits
@@ -535,7 +542,7 @@ def test_the_total_does_not_reconcile_to_the_labour_saving_and_the_gap_is_named(
         for cell in row
         if isinstance(cell.value, str)
     )
-    assert "DOES NOT RECONCILE TO THE RUN'S LABOUR SAVING" in text.upper()
+    assert "DOES NOT RECONCILE TO THE RUN'S LABOR SAVING" in text.upper()
     assert "ITEMS ACTUALLY AUTOMATED" in text.upper()
 
 
@@ -1280,7 +1287,7 @@ def test_the_hiring_plan_carries_the_summer_gap_note(book):
     )
     assert (
         "The 8 hires cover a summer gap from week 23 (the vacation season) "
-        "while tier 2 is in surplus in weeks 14-22 and tier 1 from week 36; "
+        "while Tier 2 is in surplus in weeks 14-22 and Tier 1 from week 36; "
         "see spec 6.5." in text
     )
     assert export.HIRING_PLAN_NOTES[-1].startswith("The 8 hires")

@@ -40,7 +40,12 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from capacity_model import api, controls, views  # noqa: E402  (after the path)
+from capacity_model import (  # noqa: E402  (after the path)
+    api,
+    controls,
+    download,
+    views,
+)
 
 TITLE = "Northbrook Records Services - capacity model (SYNTHETIC)"
 
@@ -315,10 +320,10 @@ def show_charts(results, key, choice, roles):
         "of scale. Hover a line to read a week off it."
     )
 
-    st.markdown("#### All-in cost, labour and machine")
+    st.markdown("#### All-in cost, labor and machine")
     st.altair_chart(views.cost_chart(views.cost_split(results, key)), width="stretch")
     st.caption(
-        "All-in cost is labour plus the automation's own invoice (spec "
+        "All-in cost is labor plus the automation's own invoice (spec "
         "6.4). The machine half is zero in any run that buys no "
         "automation, and is shown anyway so the two bars measure the same "
         "thing. Network-wide, like the cards. Fixed axes, as above."
@@ -365,12 +370,94 @@ def plan_column_config():
     return config
 
 
-def show_detail(results, key, choice, roles, changes=None):
-    """The Capacity Plan rows behind it all, and a CSV of them.
+EXCEL_HELP = (
+    "The rows above as an Excel file, formatted the way the workbook is: "
+    "the same headers, the same number formats, a frozen header row and "
+    "a filter on it, and the hours gap and the total still live formulas. "
+    "Roles are named as a person would say them. SYNTHETIC is in the file "
+    "name, because a file travels further than the page it came from."
+)
 
-    `changes` is the plain list of what a custom run changed. Given,
-    the download carries it; left out, this is a saved run and the
-    download is the one 7b settled on.
+CSV_HELP = (
+    "The same rows as raw data, at full precision and under the "
+    "workbook's own column headers, with the model's own role codes - so "
+    "a downloaded row can be matched or joined to a workbook row. "
+    "SYNTHETIC is in the file name."
+)
+
+
+# BUILT ONCE PER SET OF INPUTS, NOT ONCE PER RERUN. Writing the plan
+# workbook takes about half a second for 780 rows, and Streamlit reruns
+# this script on every widget change - so without this, moving any slider
+# on the page would spend half a second producing a file nobody had asked
+# for. Keyed on the view itself, so a filter change rebuilds it and
+# nothing else does.
+@st.cache_data(show_spinner=False)
+def plan_excel(view, run_name, filters, changes=None):
+    book = download.plan_book(
+        view, run_name=run_name, filters=filters, changes=changes,
+    )
+    return download.excel_bytes(book)
+
+
+@st.cache_data(show_spinner=False)
+def comparison_excel(table):
+    return download.excel_bytes(download.comparison_book(table))
+
+
+def show_downloads(excel, csv, help_text=CSV_HELP, legend=None):
+    """The two download buttons, Excel first.
+
+    EXCEL IS THE MAIN BUTTON AND CSV IS THE OTHER ONE (Siri, 11/23).
+    Almost everyone who takes a table off this page is going to open it
+    in Excel and show it to somebody, and what they used to get was an
+    unformatted CSV that each of them then spent ten minutes making
+    readable - so the file that got forwarded was nobody's version of the
+    model. The CSV stays, because raw data at full precision under the
+    model's own codes is what anybody doing arithmetic on it actually
+    wants, and that is a different job.
+
+    `excel` and `csv` are (label, data, file name) triples, and `legend`
+    is anything that belongs on the same line - the region key sits
+    beside the detail table's buttons, where a reader who has just
+    noticed the tints is already looking.
+    """
+    widths = [2, 2, 4] if legend is not None else [1, 1]
+    columns = st.columns(widths, vertical_alignment="center")
+    label, data, name = excel
+    columns[0].download_button(
+        label,
+        data=data,
+        file_name=name,
+        mime=download.EXCEL_MIME,
+        help=EXCEL_HELP,
+        icon=":material/download:",
+        type="primary",
+        width="stretch",
+    )
+    label, data, name = csv
+    columns[1].download_button(
+        label,
+        data=data,
+        file_name=name,
+        mime="text/csv",
+        help=help_text,
+        icon=":material/download:",
+        type="secondary",
+        width="stretch",
+    )
+    if legend is not None:
+        st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
+        columns[2].markdown(legend, unsafe_allow_html=True)
+
+
+def show_detail(results, key, choice, roles, changes=None):
+    """The Capacity Plan rows behind it all, and two downloads of them.
+
+    `changes` is the plain list of what a custom run changed. Given, the
+    Excel file carries it as an INPUTS CHANGED section and the CSV as
+    comment lines above the header; left out, this is a saved run, which
+    the workbook already describes.
     """
     st.markdown("#### The rows behind the figures")
     dimensions = filter_dimensions()
@@ -408,13 +495,19 @@ def show_detail(results, key, choice, roles, changes=None):
         width="stretch",
         column_config=plan_column_config(),
     )
+    filters = views.filter_lines(dimensions, choice, roles)
     if changes is None:
         data = views.csv_bytes(view)
         name = views.csv_name(key, choice["code"])
+        excel = plan_excel(
+            view, results["scenarios"][key]["name"], tuple(filters),
+        )
+        excel_name = download.plan_name(key, choice["code"])
         note = (
-            "The download carries the figures at full precision, not the "
-            "rounded ones on screen, and SYNTHETIC in its file name - the "
-            "only label that travels with a file."
+            "Both downloads carry the figures at full precision, not the "
+            "rounded ones on screen, what the sidebar is filtered to, and "
+            "SYNTHETIC in the file name - the only label that travels "
+            "with a file."
         )
     else:
         # A custom run's inputs exist nowhere else, so they travel with
@@ -422,34 +515,24 @@ def show_detail(results, key, choice, roles, changes=None):
         # rows still match the workbook's.
         data = views.custom_csv_bytes(view, changes)
         name = views.custom_csv_name(choice["code"])
-        note = (
-            "The download carries the figures at full precision and, above "
-            "the header row, the inputs this run changed - a custom run's "
-            "inputs exist nowhere else, so a file without them would be "
-            "unreadable a week later. The lines start with # so a reader "
-            "and pandas both skip them."
+        excel = plan_excel(
+            view, api.CUSTOM_RUN_NAME, tuple(filters), tuple(changes),
         )
-    # The key sits beside the download button, where a reader who has
-    # just noticed the tints is already looking.
-    download, legend = st.columns([2, 3], vertical_alignment="center")
-    st.markdown(views.KEY_STYLE, unsafe_allow_html=True)
-    legend.markdown(
-        views.region_key_html(views.region_key_rows(dimensions)),
-        unsafe_allow_html=True,
-    )
-    download.download_button(
-        "Download these rows (CSV, synthetic)",
-        data=data,
-        file_name=name,
-        mime="text/csv",
-        help=(
-            "The rows above as a CSV, at full precision and under the "
-            "workbook's own column headers, so a downloaded row can be "
-            "matched to a row on the Capacity Plan tab. SYNTHETIC is in "
-            "the file name, because a file travels further than the page "
-            "it came from."
-        ),
-        icon=":material/download:",
+        excel_name = download.custom_plan_name(choice["code"])
+        note = (
+            "Both downloads carry the figures at full precision and the "
+            "inputs this run changed - a custom run's inputs exist nowhere "
+            "else, so a file without them would be unreadable a week "
+            "later. The Excel file says so in an INPUTS CHANGED section "
+            "above the table; the CSV puts the same lines above the header "
+            "row, starting with # so a reader and pandas both skip them."
+        )
+    # The region key sits beside the buttons, where a reader who has just
+    # noticed the tints is already looking.
+    show_downloads(
+        (download.EXCEL_LABEL, excel, excel_name),
+        (download.CSV_LABEL, data, name),
+        legend=views.region_key_html(views.region_key_rows(dimensions)),
     )
     st.caption(note)
 
@@ -497,6 +580,24 @@ def show_comparison(results):
     st.caption(
         "The ranking puts all three next to each other, and the cheapest "
         "row is not always something anyone is offering to do."
+    )
+
+    show_downloads(
+        (download.EXCEL_LABEL, comparison_excel(table),
+         download.comparison_name()),
+        (download.CSV_LABEL, views.csv_bytes(table),
+         download.comparison_csv_name()),
+        help_text=(
+            "The same twenty-one rows as raw data, at full precision and "
+            "under the workbook's own column headers. SYNTHETIC is in the "
+            "file name."
+        ),
+    )
+    st.caption(
+        "Both downloads carry every run in the order above, ranked rather "
+        "than alphabetical - the workbook's own Capacity Scenarios tab is "
+        "the alphabetical reference, and it has seventeen columns to this "
+        "view's nine."
     )
 
 

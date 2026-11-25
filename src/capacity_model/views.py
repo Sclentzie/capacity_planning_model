@@ -163,11 +163,11 @@ MEASURE_NOTES = {
         "that could happen to it, which nobody is proposing; a "
         "SENSITIVITY varies one input of another run to test whether its "
         "finding holds.",
-    "All-in cost": "Labour plus the automation's own invoice, over the "
+    "All-in cost": "Labor plus the automation's own invoice, over the "
                    "whole 52-week plan year (spec 6.4). Dollars.",
     "All-in vs baseline": "This run's all-in cost minus the baseline's. "
                           "Negative is a saving.",
-    "Labour cost": "Pay for the hours worked over the plan year, overtime "
+    "Labor cost": "Pay for the hours worked over the plan year, overtime "
                    "included.",
     "Machine cost": "What the automation is invoiced: a fee per item, the "
                     "shared platform fee, and setup spread over a year. "
@@ -1209,6 +1209,28 @@ def scope_note(dimensions, choice):
     )
 
 
+def filter_lines(dimensions, choice, role_codes):
+    """What the sidebar is filtering to, in plain lines for a download.
+
+    A FILE IS OPENED COLD. The page says what it is filtered to in the
+    sidebar beside the table; a file carries no sidebar, and a reader who
+    sums a column of a filtered extract without knowing it was filtered
+    gets a wrong number and no warning. So the filters travel with it.
+
+    The roles are named the way the workbook names them, not by code, for
+    the reason every other role on a page is.
+    """
+    scopes = choice["scopes"]
+    covers = ", ".join(scopes) if scopes else dimensions["network_code"] + \
+        " and every site"
+    names = role_short_names()
+    roles = [names.get(code, code) for code in role_codes]
+    return [
+        f"Scope: {choice['label']} - rows for {covers}.",
+        "Roles: " + (", ".join(roles) if roles else "none selected") + ".",
+    ]
+
+
 def filter_plan(plan, role_codes=None, scopes=None):
     """The Capacity Plan rows for the chosen roles and scopes."""
     table = plan
@@ -1252,9 +1274,15 @@ def weekly_gap(results, key, role_codes=None, scopes=None):
 
 
 # The workbook's own names for the two halves (7d, 11/17): the Capacity
-# Scenarios tab calls them Labour cost and Machine cost, and so does the
+# Scenarios tab calls them Labor cost and Machine cost, and so does the
 # comparison table, so the legend on this chart calls them that too.
-LABOUR_HEADER = "Labour cost"
+#
+# The LABEL is US spelling (Siri, 11/23) and the identifier is not,
+# deliberately: the measure behind it is stored as `labour_cost` in every
+# saved scenario summary and in the results file on disk, so the name in
+# the code still matches the name in the data. Renaming that would be a
+# migration of a file, not a spelling fix.
+LABOUR_HEADER = "Labor cost"
 MACHINE_HEADER = "Machine cost"
 
 COST_HALVES = (
@@ -1631,7 +1659,7 @@ PLAN_COLUMNS = (
         "Days of inventory: work waiting, in days. Blank for work that is "
         "not allowed to wait.",
     ),
-    ("Labour cost", "Labour", 68, "Labour cost for the week, in dollars."),
+    ("Labor cost", "Labor", 68, "Labor cost for the week, in dollars."),
 )
 
 # How each column is written on screen. Streamlit takes a printf string,
@@ -1890,7 +1918,16 @@ KEY_STYLE = """<style>
 .cm-key { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem;
           font-size: 0.8125rem; line-height: 1.5; }
 .cm-key-item { display: flex; align-items: center; gap: 0.4rem; }
-.cm-swatch { width: 0.85rem; height: 0.85rem; border-radius: 0.2rem;
+/* INLINE-BLOCK, AND THAT IS THE WHOLE FIX (Siri, 11/23). An inline
+   element has no width or height - the browser ignores both - so in the
+   kind key, where the swatch is a span inside a table cell, 0.85rem
+   square was quietly dropped and all that rendered was a background on a
+   zero-height box: a thin line. In the region key the same class looked
+   right by luck, because its parent is a flex container and a flex item
+   is blockified. Saying it here means the swatch is a block wherever it
+   is put, rather than wherever it happens to be put next. */
+.cm-swatch { display: inline-block; vertical-align: -0.1rem;
+             width: 0.95rem; height: 0.95rem; border-radius: 0.2rem;
              /* A mid gray at 40%, which reads as an edge on the cream page
                 and on the charcoal one. The old pure-black edge vanished
                 into a dark page, and a swatch with no edge is a smudge. */

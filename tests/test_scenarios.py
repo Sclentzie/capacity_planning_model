@@ -766,7 +766,7 @@ def test_the_comparison_arithmetic_ties_to_the_runs(result, baseline):
             built["role_cost"]["overtime_hours"].sum()
         )
         # Three cost columns since 11/03 (spec 6.4), and each ties to a
-        # different place: labour to the plan's cost table, machine to
+        # different place: labor to the plan's cost table, machine to
         # the automation plan's own invoice, all-in to their sum. Pinned
         # separately because the whole point of splitting them was that
         # one number could not honestly be both.

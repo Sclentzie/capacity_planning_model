@@ -30,7 +30,7 @@ So: the model writes every MEASURE as a value, which is what lets the
 Section 9 check tie the workbook to the model to the cent; and Excel
 computes every DIFFERENCE and every TOTAL as a live formula, from those
 values. Nothing is computed twice in two languages. The all-in cost is a
-formula over written labour and machine, which makes spec 6.4's whole
+formula over written labor and machine, which makes spec 6.4's whole
 point - that one of those numbers alone misleads - visible in the
 spreadsheet rather than asserted in a note.
 
@@ -46,6 +46,8 @@ repository where that is not true. The header carries the PLAN WINDOW
 instead - the thing a reader actually needs to know - and the workbook is
 byte-stable for a given set of inputs.
 """
+
+import functools
 
 import pandas as pd
 from openpyxl import Workbook
@@ -180,7 +182,70 @@ BODY_BOLD = Font(name=FONT, size=10, bold=True)
 # claim nobody made, so the row says what it is where the row is read.
 BODY_ITALIC = Font(name=FONT, size=10, italic=True)
 
-HEADER_FILL = PatternFill("solid", fgColor="1F3864")
+# ---------------------------------------------------------------------------
+# THE SAME PALETTE AS THE DASHBOARD (Siri, 11/23)
+#
+# Until now the workbook was navy-headed and the page was teal, which is
+# two products. A reader who opens the file after reading the page should
+# not have to wonder whether they are looking at the same model, so the
+# header rows carry the page's own accent and the two colour meanings the
+# page uses - which region a row belongs to, and what kind of thing a run
+# is - arrive in the spreadsheet too.
+#
+# WHY THESE ARE SOLID HEXES AND THE PAGE'S ARE TRANSLUCENT. On the page a
+# tint is an rgba wash, deliberately, so the browser re-mixes it against
+# whichever palette is showing and nothing can go stale on a theme
+# switch. Excel has no such thing: a cell fill is one opaque colour. So
+# these are the LIGHT palette's washes already mixed down onto the cream
+# page - the shade a reader sees on screen in light mode - and a
+# spreadsheet is a light-mode document.
+#
+# The six values are RECORDED here rather than mixed from views, because
+# views imports this module and the arrow cannot point both ways. They
+# are not a second set of rules: a test composites each wash over the
+# page colour and fails if any of these six drifts from what the page
+# paints.
+# ---------------------------------------------------------------------------
+
+# The dashboard's accent teal (views.ACCENT_COLOURS light), with white
+# bold text at 4.84:1 - past the 4.5 AA asks for body text, and these are
+# headers. The navy it replaces was never anywhere on the page.
+HEADER_COLOUR = "3A7A8C"
+HEADER_FILL = PatternFill("solid", fgColor=HEADER_COLOUR)
+
+# Which region a row's scope sits in: the two clusters and the back
+# office. The slate for NETWORK has no hue to speak of, which says "not a
+# region" before the label does.
+NETWORK_REGION = "network"
+
+SCOPE_TINT_COLOURS = {
+    "north": "EFDAB2",             # warm amber over cream
+    "south": "DAC8EA",             # violet over cream
+    NETWORK_REGION: "D1D3D5",      # slate, the back office
+}
+
+# What kind of thing a run is: something the operation could choose,
+# something that could happen to it, or a sensitivity that tests another
+# run's finding. Same three hues as the page's Kind column.
+KIND_TINT_COLOURS = {
+    scenarios.KIND_CHOICE: "CABED3",       # violet over cream
+    scenarios.KIND_RISK: "D8C3AC",         # orange over cream
+    scenarios.KIND_SENSITIVITY: "CBC8C4",  # gray over cream
+}
+
+SCOPE_FILLS = {
+    region: PatternFill("solid", fgColor=colour)
+    for region, colour in SCOPE_TINT_COLOURS.items()
+}
+KIND_FILLS = {
+    kind: PatternFill("solid", fgColor=colour)
+    for kind, colour in KIND_TINT_COLOURS.items()
+}
+
+# Every cell in this workbook is black Arial, and black on the palest of
+# those six is 8.5:1 against the 4.5 AA asks - so a tinted cell needs no
+# text colour of its own, and a test holds all six to that.
+
 BASELINE_FILL = PatternFill("solid", fgColor="EDEDED")
 UNDERLINE = Border(bottom=Side(style="thin", color="BFBFBF"))
 WRAP_TOP = Alignment(wrap_text=True, vertical="top")
@@ -218,6 +283,275 @@ def _put(sheet, cell, value, font=BODY_FONT, number_format=None, alignment=None)
 
 
 # ---------------------------------------------------------------------------
+# What a row is called, and how wide a column has to be (Siri, 11/23)
+# ---------------------------------------------------------------------------
+
+ROLE_HEADER = "Role"
+SCOPE_HEADER = "Site or scope"
+KIND_HEADER = "Kind"
+
+
+@functools.lru_cache(maxsize=1)
+def role_names():
+    """Role code -> the plain name a person would say.
+
+    PLAIN NAMES IN THE WORKBOOK, CODES ONLY IN THE CSV (Siri, 11/23).
+    "tier_1" in a cell is the model talking to itself in front of a
+    reader, and a leader forwarding this file has no way to look the word
+    up. The CSV download is the other way round on purpose: a downloaded
+    row gets matched or joined against a workbook row, and a code is what
+    survives that.
+
+    The names come from skills.yaml, like every other piece of reference
+    data, so this module cannot start naming a role its own way.
+    """
+    return {role["code"]: role["short_name"] for role in config.load_skills()["roles"]}
+
+
+@functools.lru_cache(maxsize=1)
+def scope_regions():
+    """Scope code -> the region it belongs to, for the tint.
+
+    A site answers to its cluster; NETWORK answers to itself, because the
+    back-office teams work every site's queue remotely and are not at any
+    of them (spec 6.7). Read from sites.yaml rather than from the letter
+    a code starts with, so a site added there lands in its real cluster.
+    """
+    regions = {}
+    for cluster in config.load_sites()["clusters"]:
+        for site in cluster["sites"]:
+            regions[site] = cluster["code"]
+    regions[config.load_assumptions()["supply"]["network_scope"]] = NETWORK_REGION
+    return regions
+
+
+SKILL_HEADER = "Skill"
+
+
+def names_a_role(header):
+    """Whether this column holds a role, under whatever header.
+
+    Four tabs name one: "Role" on Capacity Plan, Capacity Ledger, Hiring
+    Plan and Next Dollar, and "F8 Role" on Coverage Events, where every
+    column carries the field number spec 6.7 gives it. Asked by suffix
+    rather than by listing the headers, so a tab that gains a role column
+    gets plain names without anybody remembering this function exists.
+
+    SKILL COUNTS AS A ROLE HERE, and that is a fact about this model
+    rather than a convenience: skills.yaml names a skill after the role
+    that holds it, so the "F8 Skill" column on Coverage Events carries
+    exactly the same five words. A value that is not one of them is left
+    alone, so a skill column that one day holds something else degrades
+    to its own text rather than to a wrong name.
+    """
+    text = str(header)
+    for word in (ROLE_HEADER, SKILL_HEADER):
+        if text == word or text.endswith(f" {word}"):
+            return True
+    return False
+
+
+def shown_role(value):
+    """A role cell as a reader should see it, or whatever it already was."""
+    if isinstance(value, str):
+        return role_names().get(value, value)
+    return value
+
+
+def cell_fill(header, value):
+    """The tint one cell wears, by what column it is in and what it says.
+
+    TWO COLUMNS CARRY A COLOUR AND THE REST CARRY NONE. Scope says which
+    region a row belongs to, which is worth a tint because the North
+    sites, the South sites and the back office interleave once rows are
+    sorted by week. Kind says what sort of thing a run is, which is worth
+    one because a ranked list puts a risk and a proposal next to each
+    other and they are not the same claim.
+
+    The kind is matched case-insensitively, because the tab writes the
+    code ("choice") and the dashboard download writes the label a reader
+    sees ("Choice"), and both should come out the same colour.
+    """
+    if header == SCOPE_HEADER:
+        return SCOPE_FILLS.get(scope_regions().get(value))
+    if header == KIND_HEADER and isinstance(value, str):
+        return KIND_FILLS.get(value.strip().lower())
+    return None
+
+
+# How wide a column ends up: what its own contents need, plus a little
+# air, and never past the cap.
+#
+# WHY AUTO-FIT AT ALL. A hand-set width is a guess about the widest value
+# a column will ever hold, and Excel's answer to a guess that came in too
+# narrow is "####" - a number replaced by nothing, in a file whose whole
+# job is to carry numbers. The hand-set widths here were good guesses and
+# no column was overflowing when this was written; what they were not was
+# MEASURED, and a plan-year total is two digits longer than any week
+# inside it, so the next column somebody adds is the one that breaks.
+# A test now measures every cell against its column on both the workbook
+# and the download, so this is checked rather than hoped.
+#
+# WIDEN ONLY, never narrow - against the DECLARED width, which stays the
+# floor because it was chosen against a wrapped header and sometimes
+# against a second block further down the same tab.
+#
+# Some columns do come out narrower than the file used to show, and that
+# is the fix rather than a side effect: openpyxl reports 13.0 for a
+# column nobody has set, the old code read that back as a measurement,
+# and every column under 13 was silently rounded up to it. A column of
+# plan weeks, 1 to 52, sat at 13 looking deliberate.
+FIT_PADDING = 2
+MAX_FIT_WIDTH = 60
+
+# The header row is 42 points tall, which is three lines of 10pt Arial,
+# and the headers wrap. So a column also has to be wide enough for its
+# own header to fit in three lines - and for its longest WORD, since
+# wrapping breaks on spaces and "Requisition" cannot be split. Without
+# this floor, fitting a column to narrow data would cut the header off
+# at a fixed row height, which is the same fault as #### one row up.
+HEADER_LINES = 3
+
+
+def header_floor(header):
+    """The narrowest a column can be without clipping its own header."""
+    text = str(header)
+    longest = max((len(word) for word in text.split()), default=0)
+    return max(longest, -(-len(text) // HEADER_LINES))
+
+# Roughly what Excel prints, per number format, so a width is measured
+# against the text a reader will actually see rather than against repr().
+# A negative takes TWO more characters than the same figure positive,
+# because every format in this workbook brackets a negative rather than
+# signing it: "(1,234.5)" against "1,234.5".
+FIT_TEXT = {
+    MONEY: lambda value: f"${value:,.0f}",
+    MONEY_CENTS: lambda value: f"${value:,.2f}",
+    HOURS: lambda value: f"{value:,.1f}",
+    FTE: lambda value: f"{value:,.2f}",
+    DAYS: lambda value: f"{value:,.2f}",
+    COUNT: lambda value: f"{value:,.0f}",
+    PERCENT: lambda value: f"{value * 100:,.1f}%",
+    PER_DOLLAR: lambda value: f"{value:,.3f}",
+}
+
+
+def shown_width(value, number_format=None):
+    """How many characters this cell takes on screen.
+
+    A formula is unmeasurable from here - openpyxl stores the text, not
+    the result - so it returns None and the caller falls back, rather
+    than fitting a column to the length of "=SUM(E6:E785)".
+
+    A STRING IN A NUMBER COLUMN IS NOT MEASURED either. The one that
+    turns up is the total row's label, which sits in the first column
+    and is prose about the row rather than a value in it: fitting the
+    plan-week column to "TOTAL OF THESE ROWS (flows only)" would make
+    the narrowest column on the tab the widest.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        if value.startswith("=") or number_format is not None:
+            return None
+        return len(value)
+    if isinstance(value, bool):
+        return len(str(value))
+    if isinstance(value, (int, float)):
+        if pd.isna(value):
+            return None
+        write = FIT_TEXT.get(number_format)
+        if write is None:
+            return len(f"{value:,.2f}")
+        return len(write(abs(value))) + (2 if value < 0 else 0)
+    return len(str(value))
+
+
+def _total_width(spec, table):
+    """How wide this column's plan-year total prints, if it has one."""
+    header, source, number_format = spec[0], spec[1], spec[2]
+    totalled = spec[4] if len(spec) > 4 else False
+    if not totalled or table is None or source is None:
+        return None
+    if source not in getattr(table, "columns", []):
+        return None
+    column = table[source]
+    if not pd.api.types.is_numeric_dtype(column):
+        return None
+    return shown_width(float(column.sum()), number_format)
+
+
+def fit_columns(sheet, columns, rows, table=None):
+    """Widen every column of one block to fit the cells inside it.
+
+    `rows` is the block's own rows - its data, and its total row if it
+    has one. NOT the whole sheet: the title and the HOW-TO-READ notes sit
+    in column A and run to several hundred characters, and a column
+    fitted to those would be a paragraph wide.
+
+    `table` is the frame the block was written from, and it is what makes
+    the TOTAL row safe. A total is a live =SUM(), and openpyxl stores the
+    text of a formula rather than its result, so a column fitted to the
+    cells alone would be fitted to its 52 weekly values and then asked to
+    print their sum - which is where #### comes from. Given the frame,
+    the total is added up here and measured like any other figure.
+
+    A column of pure formulas is fitted to the widest column sharing its
+    number format, plus two for the brackets a negative needs. A
+    difference is never wider than the widest thing it differences, so
+    that is an upper bound rather than a guess.
+    """
+    fitted = {}
+    formats = {}
+    for index, spec in enumerate(columns, start=1):
+        letter = get_column_letter(index)
+        formats[letter] = spec[2]
+        widest = None
+        for row in rows:
+            width = shown_width(sheet[f"{letter}{row}"].value, spec[2])
+            if width is not None:
+                widest = width if widest is None else max(widest, width)
+        total = _total_width(spec, table)
+        if total is not None:
+            widest = total if widest is None else max(widest, total)
+        fitted[letter] = widest
+
+    widest_of_format = {}
+    for letter, width in fitted.items():
+        if width is None:
+            continue
+        key = formats[letter]
+        widest_of_format[key] = max(widest_of_format.get(key, 0), width)
+
+    for index, spec in enumerate(columns, start=1):
+        letter = get_column_letter(index)
+        width = fitted[letter]
+        if width is None:
+            # Every cell in it is a formula: borrow from the columns it
+            # was computed from.
+            borrowed = widest_of_format.get(formats[letter])
+            if borrowed is None:
+                continue
+            width = borrowed + 2
+        # ASK WHETHER THE COLUMN EXISTS BEFORE READING ITS WIDTH.
+        # openpyxl hands back 13.0 for a column nobody has set - and
+        # creates it in the act of being asked - so reading the width
+        # alone would make every column at least 13 wide and call that a
+        # measurement. Found 11/23, when the fit came back with
+        # seventeen identical columns.
+        current = (
+            sheet.column_dimensions[letter].width
+            if letter in sheet.column_dimensions else 0
+        )
+        sheet.column_dimensions[letter].width = max(
+            spec[3],
+            header_floor(spec[0]),
+            current,
+            min(width + FIT_PADDING, MAX_FIT_WIDTH),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Capacity Scenarios (spec Section 8; all 21 runs, decided 11/03)
 # ---------------------------------------------------------------------------
 
@@ -231,7 +565,7 @@ def _put(sheet, cell, value, font=BODY_FONT, number_format=None, alignment=None)
 SCENARIO_COLUMNS = (
     ("Scenario", "scenario", None, 30),
     ("All-in cost", None, MONEY, 15),
-    ("Labour cost", "labour_cost", MONEY, 15),
+    ("Labor cost", "labour_cost", MONEY, 15),
     ("Machine cost", "machine_cost", MONEY, 14),
     ("Network required FTE", "network_required_fte", FTE, 12),
     ("Overtime hours", "overtime_hours", HOURS, 12),
@@ -239,7 +573,7 @@ SCENARIO_COLUMNS = (
     ("Requester turnaround, mean days", "mean_projected_turnaround_days", DAYS, 13),
     ("Weeks over the 5-day goal", "weeks_over_turnaround_goal", COUNT, 11),
     ("All-in vs baseline", None, MONEY, 15),
-    ("Labour vs baseline", None, MONEY, 15),
+    ("Labor vs baseline", None, MONEY, 15),
     ("Machine vs baseline", None, MONEY, 14),
     ("Network FTE vs baseline", None, FTE, 12),
     ("Overtime vs baseline", None, HOURS, 12),
@@ -259,7 +593,7 @@ SCENARIO_LETTERS = {
 # column against the measure it differences.
 VS_BASELINE = (
     ("All-in vs baseline", "All-in cost"),
-    ("Labour vs baseline", "Labour cost"),
+    ("Labor vs baseline", "Labor cost"),
     ("Machine vs baseline", "Machine cost"),
     ("Network FTE vs baseline", "Network required FTE"),
     ("Overtime vs baseline", "Overtime hours"),
@@ -318,7 +652,7 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
             alignment=HEADER_ALIGN,
         )
         cell.fill = HEADER_FILL
-        sheet.column_dimensions[letter].width = width
+        sheet.column_dimensions[letter].width = max(width, header_floor(header))
     sheet.row_dimensions[SCENARIO_HEADER_ROW].height = 42
 
     baseline_row = SCENARIO_FIRST_DATA_ROW
@@ -333,6 +667,21 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
                 if values.get("kind") == scenarios.KIND_SENSITIVITY:
                     name_font = BODY_ITALIC
                 cell = _put(sheet, f"{letter}{row}", values["scenario"], name_font)
+                # THE KIND, ON THE NAME CELL (Siri, 11/23). The dashboard
+                # gives a kind its own column and washes that cell; this
+                # tab has no kind column - spec Section 8 names its
+                # columns - so the colour goes on the thing the kind is a
+                # fact about. The italics stay: a sensitivity is the one
+                # kind that is not a proposal at all, and a colour alone
+                # would leave that to whoever remembers the key.
+                #
+                # The BASELINE row is the exception, and not by accident:
+                # its gray band is written after this and wins, because
+                # that row is the reference every difference column
+                # points at and it says so across its whole width.
+                tint = KIND_FILLS.get(values.get("kind"))
+                if tint is not None:
+                    cell.fill = tint
             elif source is not None:
                 cell = _put(
                     sheet, f"{letter}{row}", float(values[source]), font,
@@ -345,16 +694,16 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
                 if row == baseline_row:
                     cell.fill = BASELINE_FILL
 
-        # The all-in TOTAL, live: labour plus machine. Spec 6.4's point is
+        # The all-in TOTAL, live: labor plus machine. Spec 6.4's point is
         # that neither half alone is the cost of a scenario, and a formula
         # says so in a way a note cannot.
-        labour = SCENARIO_LETTERS["Labour cost"]
+        labor = SCENARIO_LETTERS["Labor cost"]
         machine = SCENARIO_LETTERS["Machine cost"]
         all_in = SCENARIO_LETTERS["All-in cost"]
         cell = _put(
             sheet,
             f"{all_in}{row}",
-            f"={labour}{row}+{machine}{row}",
+            f"={labor}{row}+{machine}{row}",
             BODY_BOLD,
             MONEY,
         )
@@ -384,6 +733,11 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
             if row == baseline_row:
                 cell.fill = BASELINE_FILL
 
+    fit_columns(
+        sheet,
+        SCENARIO_COLUMNS,
+        list(range(SCENARIO_FIRST_DATA_ROW, SCENARIO_FIRST_DATA_ROW + len(rows))),
+    )
     sheet.freeze_panes = f"B{SCENARIO_FIRST_DATA_ROW}"
     return rows
 
@@ -477,7 +831,7 @@ HEADLINES = (
 
 SUMMARY_MEASURES = (
     ("All-in cost", "All-in cost", MONEY),
-    ("  of which labour", "Labour cost", MONEY),
+    ("  of which labor", "Labor cost", MONEY),
     ("  of which machine", "Machine cost", MONEY),
     ("Network required FTE", "Network required FTE", FTE),
     ("Overtime hours", "Overtime hours", HOURS),
@@ -600,12 +954,11 @@ def write_summary(sheet, rows, assumptions):
     row += 1
     _put(sheet, f"A{row}", "HOW TO READ THIS", SECTION_FONT)
     row += 1
-    # The notes sit in column A and run under the whole block, so they
-    # wrap against the full table width rather than column A's own.
+    # The notes sit under the whole block and are MERGED across it, so
+    # that is really how wide they wrap - see _write_note.
     note_width = sum(width for _h, _m, width in SUMMARY_HEADLINE_COLUMNS)
     for note in summary_notes(assumptions, len(rows)):
-        _put(sheet, f"A{row}", note, NOTE_FONT, alignment=WRAP_TOP)
-        sheet.row_dimensions[row].height = _wrapped_height(note, note_width, 12.0)
+        _write_note(sheet, row, note, note_width, len(SUMMARY_HEADLINE_COLUMNS))
         row += 1
 
     sheet.freeze_panes = "A5"
@@ -632,11 +985,11 @@ def summary_notes(assumptions=None, scenario_count=None):
         "operation and every figure here is generated by this model from a "
         "fixed random seed. Nothing in this workbook comes from a real "
         "company, patient or employee.",
-        "ALL-IN COST = labour + machine. Labour is spec 6.4: regular pay "
+        "ALL-IN COST = labor + machine. Labor is spec 6.4: regular pay "
         "for everybody on the payroll, including people still in training, "
         "plus overtime. Machine is the automation's own invoice: the "
         "per-item fee, the setup spread over a year, and one shared "
-        "platform fee. Quoting labour alone credits an automation scenario "
+        "platform fee. Quoting labor alone credits an automation scenario "
         "with its saving and none of its cost - on these volumes the two "
         "are the same order of magnitude.",
         f"TURNAROUND is the requester's view: every request counted once, "
@@ -840,7 +1193,7 @@ CAPACITY_PLAN_COLUMNS = (
     ("Phone service level", "phone_service_level", PERCENT, 11, False),
     ("Walk-in service level", "walk_in_service_level", PERCENT, 11, False),
     ("Days of inventory", "days_of_inventory_after", DAYS, 11, False),
-    ("Labour cost", "total_cost", MONEY, 13, True),
+    ("Labor cost", "total_cost", MONEY, 13, True),
 )
 
 CAPACITY_PLAN_NOTES = (
@@ -1111,7 +1464,7 @@ HIRING_PLAN_NOTES = (
     # plan hires permanent people for a seasonal dip and carries the
     # surplus into the fall.
     "The 8 hires cover a summer gap from week 23 (the vacation season) "
-    "while tier 2 is in surplus in weeks 14-22 and tier 1 from week 36; "
+    "while Tier 2 is in surplus in weeks 14-22 and Tier 1 from week 36; "
     "see spec 6.5.",
 )
 
@@ -1282,6 +1635,56 @@ def assumptions_table(run, assumptions=None, sites=None, skills=None):
     return pd.DataFrame(rows).reset_index(drop=True)
 
 
+def _table_width(columns):
+    """How wide the whole block is, which is how wide its notes read."""
+    return sum(spec[3] for spec in columns)
+
+
+def _write_note(sheet, row, text, width, span):
+    """One wrapped note, merged across the table it explains.
+
+    MERGED, BECAUSE WRAPPING HAPPENS IN ONE COLUMN (found 11/23). The
+    height these notes get has always been computed from the width of the
+    whole table - which is what a reader sees, since the note sits in a
+    row with nothing beside it. Excel does not agree: wrap_text wraps at
+    the width of the cell's OWN column, so a 300-character note in a
+    10-wide first column wrapped to thirty lines inside a two-line row
+    and showed a fifth of itself. Merging the row makes the cell as wide
+    as the arithmetic already assumed, so the note reads as a paragraph
+    under the table.
+
+    Nothing else about a note changed, and the merge is only ever over
+    empty cells: these rows sit below the data and below the total.
+    """
+    _put(sheet, f"A{row}", text, NOTE_FONT, alignment=WRAP_TOP)
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=span)
+    sheet.row_dimensions[row].height = _wrapped_height(text, width, 12.0)
+
+
+def write_line(sheet, row, text, font=None):
+    """One line of prose in column A. Used above and below a table."""
+    return _put(sheet, f"A{row}", text, font or BODY_FONT)
+
+
+def write_heading(sheet, title, lines, start=None):
+    """The block every table sits under, and the row the header goes on.
+
+    Title, the SYNTHETIC label, then one line per thing a reader opening
+    this cold needs to know. Public because the dashboard's download
+    writes the same block with different lines in it, and two copies of a
+    heading is how a file ends up labelled SYNTHETIC in one place and not
+    in the other.
+    """
+    start = DETAIL_TITLE_ROW if start is None else start
+    _put(sheet, f"A{start}", f"{title} - SYNTHETIC", TITLE_FONT)
+    _put(sheet, f"A{start + 1}", SYNTHETIC, NOTE_FONT)
+    row = start + 2
+    for line in lines:
+        _put(sheet, f"A{row}", line, NOTE_FONT)
+        row += 1
+    return row
+
+
 # ---------------------------------------------------------------------------
 # The shared detail-tab writer
 #
@@ -1306,22 +1709,20 @@ def write_detail_tab(sheet, name, columns, table, notes, formula=None,
     first = header_row + 1
 
     if start_row is None:
-        _put(sheet, f"A{DETAIL_TITLE_ROW}", f"{name} - SYNTHETIC", TITLE_FONT)
-        _put(sheet, f"A{DETAIL_NOTE_ROW}", SYNTHETIC, NOTE_FONT)
-        _put(
+        write_heading(
             sheet,
-            f"A{DETAIL_SOURCE_ROW}",
-            f"{basis}, plan year, {len(table):,} rows. Every measure is "
-            f"written by the model; only totals and differences are live "
-            f"Excel formulas. Every scenario's headline measures are on "
-            f"the '{SCENARIOS_TAB}' tab.",
-            NOTE_FONT,
+            name,
+            [
+                f"{basis}, plan year, {len(table):,} rows. Every measure is "
+                f"written by the model; only totals and differences are live "
+                f"Excel formulas. Every scenario's headline measures are on "
+                f"the '{SCENARIOS_TAB}' tab."
+            ],
         )
 
     if not len(table) and empty_note:
-        _put(sheet, f"A{header_row}", empty_note, NOTE_FONT, alignment=WRAP_TOP)
-        sheet.row_dimensions[header_row].height = _wrapped_height(empty_note, 110, 12.0)
-        sheet.column_dimensions["A"].width = 110
+        _write_note(sheet, header_row, empty_note, _table_width(columns),
+                    len(columns))
         return {"header_row": header_row, "first": first, "last": header_row,
                 "total_row": None}
 
@@ -1335,9 +1736,16 @@ def write_detail_tab(sheet, name, columns, table, notes, formula=None,
         # WIDEN ONLY. A tab with two blocks shares its columns between
         # them, and letting the lower block win would narrow a column the
         # block above it needs - which is how a money column ends up
-        # rendering as ####.
-        current = sheet.column_dimensions[letter].width or 0
-        sheet.column_dimensions[letter].width = max(width, current)
+        # rendering as ####. Asked by membership rather than by reading
+        # the width, because openpyxl reports 13.0 for a column nobody
+        # has set and creates it in the act of being asked.
+        current = (
+            sheet.column_dimensions[letter].width
+            if letter in sheet.column_dimensions else 0
+        )
+        sheet.column_dimensions[letter].width = max(
+            width, header_floor(header), current
+        )
     sheet.row_dimensions[header_row].height = 42
 
     for offset, record in enumerate(table.to_dict("records")):
@@ -1350,6 +1758,15 @@ def write_detail_tab(sheet, name, columns, table, notes, formula=None,
                 value = formula(header, row) if formula else None
             else:
                 value = record.get(source)
+            # The tint is decided from the value as the MODEL writes it,
+            # before the role column is renamed, so a cell's colour and
+            # its text are two views of one fact rather than two lookups
+            # that have to be kept in step.
+            fill = cell_fill(header, value)
+            if names_a_role(header):
+                value = shown_role(value)
+            if fill is not None:
+                sheet[f"{letter}{row}"].fill = fill
             if value is None:
                 continue
             if isinstance(value, float) and pd.isna(value):
@@ -1397,14 +1814,22 @@ def write_detail_tab(sheet, name, columns, table, notes, formula=None,
             )
             cell.border = UNDERLINE
 
+    # Fitted now rather than when the headers were written, because the
+    # total row is the widest thing on most of these tabs and it did not
+    # exist yet.
+    fit_columns(
+        sheet,
+        columns,
+        list(range(first, last + 1)) + ([total_row] if total_row else []),
+        table=table if total_row else None,
+    )
+
     if notes:
         row = (total_row or last) + 2
         _put(sheet, f"A{row}", "HOW TO READ THIS", SECTION_FONT)
         row += 1
-        note_width = sum(width for _h, _s, _f, width, _t in columns)
         for note in notes:
-            _put(sheet, f"A{row}", note, NOTE_FONT, alignment=WRAP_TOP)
-            sheet.row_dimensions[row].height = _wrapped_height(note, note_width, 12.0)
+            _write_note(sheet, row, note, _table_width(columns), len(columns))
             row += 1
 
     return {"header_row": header_row, "first": first, "last": last,
@@ -1652,7 +2077,7 @@ def next_dollar_notes(assumptions=None, scenario_name=None):
         "hiring class not bought. W14 is the worked example: at +15% "
         "volume it ranks as profitable per item, but the 0.23 FTE it "
         "frees sits inside the QA team's existing paid hours, so it saves "
-        "$0 of labour and still adds a setup fee.",
+        "$0 of labor and still adds a setup fee.",
         "RANKED AFTER FIXED COSTS, which is the number a leader can act "
         "on. A row saving $1.58 on a $2.32 item returns more per dollar "
         "spent than one saving $4 on a $10 item. Ranking before fixed "
@@ -1670,7 +2095,7 @@ def next_dollar_notes(assumptions=None, scenario_name=None):
         f"fee, the setup and the platform share - and the human side to "
         f"the required hours that run frees, priced at each role's loaded "
         f"rate.",
-        f"IT DOES NOT RECONCILE TO THE RUN'S LABOUR SAVING, and the gap is "
+        f"IT DOES NOT RECONCILE TO THE RUN'S LABOR SAVING, and the gap is "
         f"the point rather than an error. This table values every freed "
         f"hour at its loaded rate; the run only banks a saving where the "
         f"hour cancels overtime or a hiring class. On a held roster most "

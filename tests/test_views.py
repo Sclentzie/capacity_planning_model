@@ -24,7 +24,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from capacity_model import api, export, scenarios, views
+from capacity_model import api, download, export, scenarios, views
 
 APP = Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
 
@@ -210,7 +210,7 @@ def test_the_page_renders_the_same_figures_it_was_handed(
 
 
 def test_the_cost_split_adds_up_to_the_all_in_cost(results):
-    """Labour plus machine is the headline, or the chart is a decoration."""
+    """Labor plus machine is the headline, or the chart is a decoration."""
     for key, run in results["scenarios"].items():
         split = views.cost_split(results, key)
         total = float(split.loc[run["name"]].sum())
@@ -508,7 +508,7 @@ def test_the_cost_chart_keeps_the_machine_half_even_when_it_is_zero(results):
     split = views.cost_split(results, "central_phones")
     # The workbook's own names for the two halves since 7d, so the
     # legend here and the columns of the comparison table agree.
-    assert list(split.columns) == ["Labour cost", "Machine cost"]
+    assert list(split.columns) == ["Labor cost", "Machine cost"]
     assert list(split.index) == ["Baseline", "Centralized phones"]
     assert float(split.loc["Baseline", "Machine cost"]) == 0.0
 
@@ -660,11 +660,11 @@ def test_the_screen_table_is_rounded_the_way_the_workbook_prints(results):
     )
     view = views.plan_view(plan)
     shown = views.plan_display(view)
-    assert shown["Labour cost"].equals(view["Labour cost"].round(0))
+    assert shown["Labor cost"].equals(view["Labor cost"].round(0))
     assert shown["Required hours"].equals(view["Required hours"].round(1))
     # The exact figures are untouched, because the download uses them.
-    assert view["Labour cost"].sum() != pytest.approx(
-        shown["Labour cost"].sum(), abs=1e-9
+    assert view["Labor cost"].sum() != pytest.approx(
+        shown["Labor cost"].sum(), abs=1e-9
     )
 
 
@@ -741,8 +741,8 @@ def test_the_download_is_the_filtered_rows_at_full_precision(results):
     back = pd.read_csv(io.BytesIO(views.csv_bytes(view)))
     assert list(back.columns) == list(view.columns)
     assert len(back) == len(view)
-    assert back["Labour cost"].sum() == pytest.approx(
-        float(view["Labour cost"].sum()), abs=1e-6
+    assert back["Labor cost"].sum() == pytest.approx(
+        float(view["Labor cost"].sum()), abs=1e-6
     )
 
 
@@ -1023,11 +1023,47 @@ def test_the_page_lists_the_filtered_plan_rows(dimensions):
     assert len(filtered) < len(whole)
 
 
-def test_the_page_offers_the_csv_download(dimensions):
+def test_the_page_offers_excel_first_and_csv_beside_it(dimensions):
+    """Two downloads under the detail table, in that order (Siri, 11/23).
+
+    ORDER IS THE POINT, not just presence. Almost everyone who takes this
+    table off the page opens it in Excel and shows it to somebody, so the
+    formatted file is the main button and the raw CSV is the one beside
+    it. A test that only counted the buttons would pass with them the
+    wrong way round.
+    """
     app = app_test().run()
     buttons = app.get("download_button")
-    assert len(buttons) == 1
-    assert "synthetic" in buttons[0].label.lower()
+    assert [button.label for button in buttons] == [
+        download.EXCEL_LABEL, download.CSV_LABEL
+    ]
+    assert "excel" in buttons[0].label.lower()
+    assert "csv" in buttons[1].label.lower()
+
+
+def test_both_downloads_carry_synthetic_in_the_file_name():
+    """The only label that travels with a file is its name."""
+    names = [
+        download.plan_name("baseline", "network"),
+        download.custom_plan_name("network"),
+        download.comparison_name(),
+        download.comparison_csv_name(),
+        views.csv_name("baseline", "network"),
+        views.custom_csv_name("network"),
+    ]
+    for name in names:
+        assert "SYNTHETIC" in name, name
+    assert all("CUSTOM" in name for name in names if "custom" in name.lower())
+
+
+def test_compare_all_offers_the_same_two_downloads():
+    """The ranked view is a table somebody will want to forward too."""
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    buttons = app.get("download_button")
+    assert [button.label for button in buttons] == [
+        download.EXCEL_LABEL, download.CSV_LABEL
+    ]
 
 
 # ---------------------------------------------------------------------------

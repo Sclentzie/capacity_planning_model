@@ -354,7 +354,7 @@ def test_the_comparison_columns_carry_the_workbook_s_headers():
             assert sources[header] == key, header
         else:
             # The workbook builds this one as a live Excel formula, so it
-            # has no source column; all-in cost is labour plus machine and
+            # has no source column; all-in cost is labor plus machine and
             # summarise already holds that sum.
             assert header == "All-in cost" and key == "total_cost"
 
@@ -362,16 +362,16 @@ def test_the_comparison_columns_carry_the_workbook_s_headers():
 def test_the_cost_lines_add_up_to_the_all_in_cost(fresh):
     """A cost view that nearly reconciles is worse than none.
 
-    Every line of the bill, labour and machine, against the all-in figure
+    Every line of the bill, labor and machine, against the all-in figure
     on the comparison row - to the cent, for all 21 runs.
     """
     for key, run in fresh["scenarios"].items():
         lines = run["cost_lines"]
         assert abs(lines["amount"].sum() - run["summary"]["total_cost"]) < CENT, key
 
-        labour = lines[lines["basis"] != api.MACHINE_BASIS]["amount"].sum()
+        labor = lines[lines["basis"] != api.MACHINE_BASIS]["amount"].sum()
         machine = lines[lines["basis"] == api.MACHINE_BASIS]["amount"].sum()
-        assert abs(labour - run["summary"]["labour_cost"]) < CENT, key
+        assert abs(labor - run["summary"]["labour_cost"]) < CENT, key
         assert abs(machine - run["summary"]["machine_cost"]) < CENT, key
 
 

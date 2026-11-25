@@ -68,7 +68,7 @@ machine do work that still arrives, and the work comes back: exceptions, a QA
 sample, and legal sign-off where the law requires a person. The human cost a
 machine displaces is priced on the **easy items it actually takes**, not an
 average item, and the machine's own invoice — per-item fee, setup spread over a
-year, one shared platform fee — is counted alongside the labour it saves.
+year, one shared platform fee — is counted alongside the labor it saves.
 
 **Scenarios.** 21 runs sit side by side: volume and attrition shocks, pooled
 phones, service-goal changes, scheduling shapes, five automation variants, a
@@ -136,10 +136,10 @@ first, then the eight the Summary tab headlines, then the rest — and filter to
 the network, a cluster or a site, and to the roles inside it. The page shows the
 six headline measures against the baseline, that run's one-line finding where
 the Summary has one, the weekly shortfall against the baseline, the all-in cost
-split into labour and machine, and the Capacity Plan rows behind all of it, with
-a CSV download. **Compare all scenarios**: every run at once, ranked by what it
-does to the all-in cost. **Build your own**: assemble a run of your own and
-put it through the model on demand.
+split into labor and machine, and the Capacity Plan rows behind all of it, with
+two downloads. **Compare all scenarios**: every run at once, ranked by what it
+does to the all-in cost, with the same two downloads. **Build your own**:
+assemble a run of your own and put it through the model on demand.
 
 The build-your-own panel has a control for every lever the 21 scenario files
 pull, grouped as Demand, Supply, Service, Structure, AI and automation, and
@@ -174,8 +174,9 @@ of the overrides. **Reset to baseline** puts every control back and forgets
 them.
 
 A custom run is called **Custom run (synthetic)** however faithfully it copies
-a scenario, and its CSV carries the inputs that were changed on comment lines
-above the header row — a custom run's inputs exist nowhere else, so a file
+a scenario, and both its downloads carry the inputs that were changed — the
+Excel file in an INPUTS CHANGED section above the table, the CSV on comment
+lines above the header row. A custom run's inputs exist nowhere else, so a file
 without them would be unreadable a week later. Its results are shown through
 the same cards, charts and table as a saved run, so the two cannot be reported
 differently. A test sets the controls to five scenario files' inputs and
@@ -290,7 +291,14 @@ deliberately, since they are never on screen together.
 One pair is still open: the no-change blue against the teal accent in dark
 mode, 32.8, recorded as a deliberately failing test rather than written off.
 The tints are a thing done to the screen; the CSV is the same bytes it always
-was.
+was. **The workbook wears the same palette** as of 11/23: its header rows are
+the page's own teal in white bold rather than the navy they were, which was a
+colour that appeared nowhere on the page; a row's Scope cell carries its
+region, and a run's name on Capacity Scenarios carries its kind, in the same
+six colours — mixed down onto the cream page, because Excel has no transparency
+and a spreadsheet is a light-mode document. A test composites each of the
+page's washes and fails if the two ever drift. Columns are fitted to what they
+hold, with the plan-year total measured too, so nothing renders as ####.
 
 Each run declares what KIND it is, in its own scenario file: a **choice** is
 something the operation could decide to do, a **risk** is something that could
@@ -311,11 +319,14 @@ zero under an arrow — a rounding artefact should not wear a verdict — and th
 exact difference is on the card's hover, so nothing is hidden by being rounded.
 
 Roles are called what people call them — "Records Specialist", "Tier 1" —
-everywhere on the page, from the sidebar to the table. The short names come
-from `skills.yaml` beside the full ones, so the page never invents an
-abbreviation of its own; hover the table's Role column for the full name. The
-CSV keeps the model's own codes, because a downloaded row has to match a
-workbook row.
+everywhere on the page and, since 11/23, everywhere in the workbook and the
+Excel download too. The short names come from `skills.yaml` beside the full
+ones, so nothing here invents an abbreviation of its own; hover the table's
+Role column for the full name. The CSV is the one place that keeps the model's
+own codes, because a downloaded row has to match a workbook row and a code is
+what survives being joined to something else. A test reads every string on
+every tab and fails on a role code, not just on the Role column: a code can
+arrive in a sentence as easily as in a cell.
 
 Both charts are **locked**: the shortfall chart spans the whole plan year,
 every week of it, and each chart's vertical axis is fixed to a round number
@@ -328,6 +339,21 @@ The detail table's headers are shortened to fit the page without scrolling
 sideways — hover one for the workbook's own name for that column and what it
 means. The CSV download is not shortened: it keeps the full headers and the
 full precision, because a downloaded row has to match a workbook row.
+
+**Two downloads, and the formatted one is the main button.** Wherever the page
+offers a table to take away, **Download Excel (formatted)** sits first and
+**Download CSV (raw data)** beside it. The Excel file is exactly what is on
+screen — the same rows, in the same order, under the same headers, for the run
+and the filters showing — wearing the workbook's own styling, because it is
+written by the exporter rather than by a second set of rules: Arial, the teal
+header row, the same number formats, negatives in parentheses, a frozen header
+with a filter on it, and the hours gap and the totals still live Excel
+formulas. It says above the table which run it is and what was filtered out, so
+somebody opening it cold cannot sum a filtered column believing it is the
+network. The CSV is unchanged and does the other job: raw data at full
+precision under the model's own role codes, for anyone joining it to something
+else. A test ties every figure in the Excel file to the figure on screen, to
+the cent.
 
 Back-office roles are one network team rather than site staff, so a site or
 cluster view says that in words instead of drawing them at zero: a role that
@@ -347,7 +373,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 839 tests, about 85 minutes
+# The validation checks: 872 tests, about 82 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -387,11 +413,11 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-839 tests across 24 files: 838 passing, and 1 that fails on purpose and is
+872 tests across 25 files: 871 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 25th file, `tests/test_live_colours.py`, holds 15 more that drive a real
+A 26th file, `tests/test_live_colours.py`, holds 16 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
 read back the colours actually painted; they check every card on every run
 against what the model says that measure did, card by card, rather than asking

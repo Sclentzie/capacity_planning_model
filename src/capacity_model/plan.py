@@ -1336,11 +1336,11 @@ def weekly_cost_comparison(
 
     Decided 10/27: both sides must cover the SAME items and the SAME work,
     or the comparison is rhetoric. So the automation side carries its
-    human-in-the-loop labour - the exception and QA hours, priced at a
+    human-in-the-loop labor - the exception and QA hours, priced at a
     human's productive-hour cost - and its share of the fixed costs,
     alongside the per-item fee.
 
-    Leaving the loop labour off would be comparing a machine that never
+    Leaving the loop labor off would be comparing a machine that never
     needs a second look against people who do. Leaving the platform share
     off would hand a leader a number that gets worse the moment they ask
     the finance team about it.
@@ -1430,18 +1430,18 @@ def weekly_cost_comparison(
     loop = loop[
         (loop["work_type"] == work_type) & (loop["week_index"] == week_index)
     ]
-    labour = {kind: {"hours": 0.0, "cost": 0.0} for kind in automation.RETURN_KINDS}
+    labor = {kind: {"hours": 0.0, "cost": 0.0} for kind in automation.RETURN_KINDS}
     for entry in loop.itertuples():
         hour = productive_hour_cost(entry.role, assumptions)
-        labour[entry.work_kind]["hours"] += entry.required_hours
-        labour[entry.work_kind]["cost"] += entry.required_hours * hour
+        labor[entry.work_kind]["hours"] += entry.required_hours
+        labor[entry.work_kind]["cost"] += entry.required_hours * hour
 
     automation_total = (
         float(row["item_cost"])
         + float(row["setup_cost"])
         + float(row["platform_cost"])
-        + labour["exception"]["cost"]
-        + labour["qa_sample"]["cost"]
+        + labor["exception"]["cost"]
+        + labor["qa_sample"]["cost"]
     )
     items = float(row["automated_items"])
     return {
@@ -1452,13 +1452,13 @@ def weekly_cost_comparison(
         "item_cost": float(row["item_cost"]),
         "setup_cost": float(row["setup_cost"]),
         "platform_cost": float(row["platform_cost"]),
-        "exception_hours": labour["exception"]["hours"],
-        "exception_cost": labour["exception"]["cost"],
-        "qa_hours": labour["qa_sample"]["hours"],
-        "qa_cost": labour["qa_sample"]["cost"],
+        "exception_hours": labor["exception"]["hours"],
+        "exception_cost": labor["exception"]["cost"],
+        "qa_hours": labor["qa_sample"]["hours"],
+        "qa_cost": labor["qa_sample"]["cost"],
         # Reported, deliberately outside the total (spec 6.6).
-        "sign_off_hours": labour["sign_off"]["hours"],
-        "sign_off_cost": labour["sign_off"]["cost"],
+        "sign_off_hours": labor["sign_off"]["hours"],
+        "sign_off_cost": labor["sign_off"]["cost"],
         "automation_total": automation_total,
         "by_hand_total": by_hand,
         "saving": by_hand - automation_total,
