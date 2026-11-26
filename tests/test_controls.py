@@ -7,6 +7,8 @@ have to come back as that scenario's, to the cent. Anything less and the
 panel is a second, slightly different model wearing the same name.
 """
 
+import html
+import re
 import sys
 from datetime import time
 from pathlib import Path
@@ -766,7 +768,9 @@ def test_an_impossible_window_costs_a_message_not_a_run():
 
     app.button(key="run_custom").click().run()
     assert not app.exception
-    assert any("close after it opens" in note.value for note in app.error)
+    assert any(
+        "close after it opens" in note for note in notices(app, "refused")
+    )
 
     after = controls.run_signature.cache_info()
     assert (after.hits, after.misses) == (before.hits, before.misses)
@@ -909,7 +913,9 @@ def test_the_advanced_box_refuses_and_warns_on_the_page():
     app.text_input(key="advanced_value").set_value("5.0").run()
     app.button(key="advanced_add").click().run()
     assert not app.exception
-    assert any("between 0% and 100%" in note.value for note in app.error)
+    assert any(
+        "between 0% and 100%" in note for note in notices(app, "refused")
+    )
     assert not app.session_state[ADVANCED_STATE]
 
     # A value inside the rule but a long way from the baseline: queued,
@@ -918,9 +924,12 @@ def test_the_advanced_box_refuses_and_warns_on_the_page():
     app.button(key="advanced_add").click().run()
     assert not app.exception
     assert app.session_state[ADVANCED_STATE] == {"automation.uptime": 0.2}
+    # The amber tone, not the red one: this change IS in the run.
     assert any(
-        controls.TESTED_RANGE_NOTE in note.value for note in app.warning
+        controls.TESTED_RANGE_NOTE in note
+        for note in notices(app, "caution")
     )
+    assert not notices(app, "refused"), "an allowed value was drawn refused"
 
 
 # ---------------------------------------------------------------------------
@@ -936,6 +945,24 @@ def app_test():
     if source not in sys.path:
         sys.path.insert(0, source)
     return AppTest.from_file(str(APP), default_timeout=600)
+
+
+def notices(app, tone):
+    """What the page's notices of one tone SAY, as plain sentences.
+
+    Every notice on this page is a banner the page draws itself since
+    11/25 - a wash of its hue, the sentence in that hue, a thin left
+    edge - so a refusal arrives as markup rather than as st.error's
+    text, and a test has to take the tags off to read it. The tone is
+    part of the assertion and not an incidental: a refusal in the amber
+    of an allowed-but-far value would be the wrong sentence in the right
+    words.
+    """
+    opening = f'<div class="cm-banner cm-{tone}">'
+    return [
+        " ".join(html.unescape(re.sub(r"<[^>]+>", " ", block.value)).split())
+        for block in app.markdown if opening in block.value
+    ]
 
 
 def open_panel():
@@ -982,7 +1009,7 @@ def test_nothing_runs_until_the_button_is_pressed(catalogue):
     after = controls.run_signature.cache_info()
     assert (after.hits, after.misses) == (before.hits, before.misses)
     # And it says so, rather than leaving a blank page.
-    assert any("press Run" in note.value for note in app.info)
+    assert any("press Run" in note for note in notices(app, "note"))
 
 
 def test_pressing_run_shows_the_result_in_the_browse_view_s_cards():

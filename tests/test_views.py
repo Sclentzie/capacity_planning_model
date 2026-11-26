@@ -14,6 +14,7 @@ run of the model is tests/test_api.py's job, and it re-runs the whole
 model to prove it - so nothing here needs eight minutes.
 """
 
+import ast
 import html
 import io
 import json
@@ -138,14 +139,34 @@ def page_style(app):
     return "\n".join(str(element.proto.body) for element in found)
 
 
-def banner_texts(app, tone):
-    """The banners of one tone the page wrote."""
+def banner_texts(app, tone, area=None):
+    """The banners of one tone the page wrote.
+
+    `area` narrows it to one part of the page - app.sidebar, above all,
+    which is where the back-office note is written.
+    """
     # The opening tag, not the class name: the page's own stylesheet
     # mentions every class it styles, and matching that would return a
     # block of CSS as if it were a banner.
     opening = f'<div class="cm-banner cm-{tone}">'
     return [
-        block.value for block in app.markdown if opening in block.value
+        block.value for block in (area if area is not None else app).markdown
+        if opening in block.value
+    ]
+
+
+def banner_words(app, tone, area=None):
+    """The same banners as plain sentences, tags and entities undone.
+
+    Every notice on this page is markup now rather than st.info's text
+    (11/25), so a test that wants to read what a notice SAYS has to take
+    the tags off first.
+    """
+    return [
+        " ".join(
+            html_module.unescape(re.sub(r"<[^>]+>", " ", banner)).split()
+        )
+        for banner in banner_texts(app, tone, area)
     ]
 
 
@@ -1090,9 +1111,14 @@ def test_the_page_drops_the_back_office_roles_in_a_site_view(dimensions):
     offered = set(role_picker(app).options)
     network = {role["name"] for role in views.network_roles(dimensions)}
     assert offered.isdisjoint(network)
+    # In the sidebar, as a note banner since 11/25 - it was an
+    # st.sidebar.info, which is one of the twelve filled alert blocks
+    # the reviewers found out of place in light mode.
+    notes = banner_words(app, "note", app.sidebar)
+    assert notes, "the back-office note is not in the sidebar"
     assert any(
-        role["name"] in note.value
-        for note in app.sidebar.info
+        role["name"] in note
+        for note in notes
         for role in views.network_roles(dimensions)
     )
 
@@ -2459,7 +2485,8 @@ def test_nothing_coloured_is_drawn_with_a_mode():
         "card_colour", "card_markdown", "card_html", "kind_tint",
         "kind_markdown", "region_tint", "live_colour", "live_wash",
         "table_html", "table_style", "scope_line_html", "banner_html",
-        "banner_style", "download_style", "scope_class_of", "kind_class_of",
+        "banner_style", "notice_rules", "download_style", "scope_class_of",
+        "kind_class_of",
     ):
         taken = inspect.signature(getattr(views, name)).parameters
         assert "mode" not in taken, f"views.{name} takes a mode again"
@@ -3111,3 +3138,352 @@ def test_the_chart_stylesheet_reaches_the_page():
     app = app_test().run()
     assert not app.exception
     assert views.live_colour(views.CHART_LABEL_COLOUR) in page_style(app)
+
+
+# ---------------------------------------------------------------------------
+# Round 3 (Siri, 11/25, from the in-house testers on the live app):
+# every notice in the Finding banner's design, softer scope words, and
+# clear space between a table and its download buttons
+# ---------------------------------------------------------------------------
+
+# Streamlit's own alert blocks. Eleven of these were on the page, and in
+# light mode they are filled panels in a palette that was never this
+# page's - which is what the reviewers were looking at when they said
+# the "Set the controls" message looked out of place.
+ALERT_CALLS = re.compile(r"^st(\.sidebar)?\.(info|warning|error|success)$")
+
+
+def app_calls():
+    """Every st.* call the page makes, by name, read off its own source.
+
+    Parsed rather than grepped: the word "st.info" appears in a comment
+    and in a docstring on this page - saying that it USED to be called -
+    and a grep would find those and call it a failure.
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
+    ).read_text(encoding="utf-8")
+    return [
+        ast.unparse(node.func)
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+
+
+def test_the_page_draws_no_streamlit_alert_blocks():
+    """The structural half of "every notice uses the banner design".
+
+    Twelve of these were on the page before this round: one on every
+    view (the staleness notice), one in the sidebar, eight in the
+    build-your-own panel, and two where an emptied role filter leaves
+    nothing to draw.
+
+    A running test cannot reach every notice: half of them are refusals
+    that need a value the validator rejects, and two more need an input
+    search that finds nothing. So the guarantee is read off the source -
+    which also means a new st.info written in a year's time fails here
+    rather than being spotted in a screenshot.
+
+    st.toast is deliberately NOT on this list. A toast is a transient
+    overlay Streamlit draws over the page and takes away again; it is
+    not a notice sitting in the flow of the page, and there is no banner
+    design for something that disappears.
+    """
+    stray = sorted({call for call in app_calls() if ALERT_CALLS.match(call)})
+    assert not stray, (
+        f"these are Streamlit alert blocks, not banners: {stray}"
+    )
+    # And the page really does draw banners instead, or this test would
+    # pass on a page with no notices at all.
+    assert "notice(" in (
+        Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_every_notice_a_reader_meets_is_a_banner():
+    """The running half, on each place a notice is actually drawn.
+
+    Three notices can be reached without refusing anything: the panel
+    before a run, the back-office note in the sidebar, and the empty
+    role filter. Each has to arrive as a banner of the right tone, and
+    no view may leave a Streamlit alert anywhere on the page.
+    """
+    def no_alerts(app, where):
+        for area in (app, app.sidebar):
+            for kind in ("error", "warning", "info", "success"):
+                found = getattr(area, kind)
+                assert not found, (
+                    f"{where}: a Streamlit {kind} block is still on the page"
+                )
+
+    # 1. Build your own, before a run - the one the reviewers named.
+    app = app_test().run()
+    view_picker(app).set_value(views.BUILD_VIEW).run()
+    assert not app.exception
+    no_alerts(app, views.BUILD_VIEW)
+    assert any(
+        "press Run" in note for note in banner_words(app, "note")
+    ), banner_words(app, "note")
+
+    # 2. Compare all, which draws no notice of its own.
+    app = app_test().run()
+    view_picker(app).set_value(views.COMPARE_VIEW).run()
+    assert not app.exception
+    no_alerts(app, views.COMPARE_VIEW)
+
+    # 3. One run with the role filter emptied: a note, not a warning -
+    # nothing is wrong, the reader has unticked everything.
+    app = app_test().run()
+    role_picker(app).set_value([]).run()
+    assert not app.exception
+    no_alerts(app, "no roles")
+    notes = banner_words(app, "note")
+    assert any("Pick at least one role" in note for note in notes), notes
+    assert not banner_words(app, "refused"), "an empty filter is not a refusal"
+
+
+def test_both_views_that_can_be_emptied_say_the_same_sentence():
+    """One sentence, written once (11/25).
+
+    The browse view and the custom result both lose their chart and
+    their table when the role filter is emptied, and both said so in
+    their own copy of the sentence until this round.
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
+    ).read_text(encoding="utf-8")
+    assert source.count("NO_ROLES_NOTE") == 3, (
+        "the sentence is declared once and used twice"
+    )
+    assert source.count("nothing to chart or list") == 1
+
+
+def test_the_notice_tones_are_the_finding_banner_s_design():
+    """One design, three hues, and every bar measured (Siri, 11/25).
+
+    The design is the Finding banner's, unchanged: a wash of the hue, the
+    sentence written in that hue, a thin left edge. The hue is the only
+    thing that differs between the three, because a notice on this page
+    is in one of three registers and they are not interchangeable - a
+    refusal drawn in the Finding's calm blue would be a worse light mode
+    than the filled block it replaces.
+    """
+    sheet = views.banner_style()
+    assert set(views.NOTICE_TONES) == {"note", "caution", "refused"}
+
+    for tone, pair in views.NOTICE_TONES.items():
+        # A pair, never a pick: the 11/20 rule, which still holds.
+        assert views.live_colour(pair) in sheet, tone
+        assert views.live_wash(
+            pair, views.PANEL_ALPHA, views.PANEL_DARK_ALPHA
+        ) in sheet, tone
+        assert f".cm-{tone} {{" in sheet, tone
+        assert f"border-left: {views.NOTICE_EDGE} solid" in sheet
+        assert views.BANNER_TONES[tone] == f"cm-{tone}"
+        # Readable where it is written, composited the way the browser
+        # composites it - ON THE PAGE AND IN THE SIDEBAR, because the
+        # back-office note is written in the sidebar and the sidebar is
+        # a step off the page colour.
+        for mode, shade in zip(views.MODES, pair):
+            alpha = (
+                views.PANEL_ALPHA if mode == views.LIGHT_MODE
+                else views.PANEL_DARK_ALPHA
+            )
+            for where, background in (
+                ("page", views.page_colour(mode)),
+                ("sidebar", views.SIDEBAR_COLOURS[mode]),
+            ):
+                washed = views.composite_over(
+                    "rgba(%d, %d, %d, %s)" % (*views._parts(shade), alpha),
+                    background,
+                )
+                ratio = views.contrast_ratio(shade, washed)
+                assert ratio >= views.AA_TEXT, (
+                    f"{tone} on the {where} in {mode}: {ratio:.2f}:1"
+                )
+                # And the wash is visible at all: a panel nobody can see
+                # is a sentence with a left edge.
+                assert views.colour_distance(washed, background) >= 3.0, tone
+
+    # The three told apart from each other. A second signal carries the
+    # register as well - the lead word - so DIFFERENT is the bar here.
+    for mode, end in enumerate(views.MODES):
+        shades = [pair[mode] for pair in views.NOTICE_TONES.values()]
+        for first in range(len(shades)):
+            for second in range(first + 1, len(shades)):
+                apart = views.colour_distance(shades[first], shades[second])
+                assert apart >= views.DIFFERENT, (
+                    f"{end}: {shades[first]} and {shades[second]} are "
+                    f"{apart:.1f} apart"
+                )
+
+    # No louder than it has to be: nothing here needs !important, and
+    # the sentence is never drawn as white-on-a-slab.
+    assert "!important" not in sheet
+    for tone in views.NOTICE_TONES:
+        assert f".cm-{tone} {{ background: light-dark(rgba" in sheet, tone
+
+
+def test_a_notice_tone_cannot_exist_without_a_rule_for_it():
+    """The table and the stylesheet are one thing, generated from one.
+
+    Three hues in NOTICE_TONES and three rules in the sheet, counted -
+    so a fourth tone added to the table without a hue, or a class used
+    in the markup with no rule behind it, fails here.
+    """
+    rules = views.notice_rules()
+    assert rules.count("border-left") == len(views.NOTICE_TONES)
+    for tone in views.NOTICE_TONES:
+        assert views.banner_html("x", tone).count(f"cm-{tone}") == 1
+    # And the one tone that is NOT a notice keeps its own thicker edge.
+    assert views.SYNTHETIC_EDGE != views.NOTICE_EDGE
+    assert f"border-left: {views.SYNTHETIC_EDGE} solid" in views.banner_style()
+
+
+def test_a_command_inside_a_notice_is_still_written_as_code():
+    """Streamlit's alerts rendered markdown; a banner is our own HTML.
+
+    The staleness notice names the command that rebuilds the results. In
+    an st.error the backticks made it code; without this they would have
+    arrived on the page as two literal characters.
+    """
+    drawn = views.banner_html(
+        "Rebuild with `python -m capacity_model.api` first.", "refused"
+    )
+    assert "<code>python -m capacity_model.api</code>" in drawn
+    assert "`" not in drawn
+
+    # And the escaping still happens FIRST, so a notice cannot carry
+    # markup onto the page by writing it inside backticks.
+    sneaky = views.banner_html("`<script>alert(1)</script>`", "note")
+    assert "<script>" not in sneaky
+    assert "&lt;script&gt;" in sneaky
+
+
+def test_the_scope_words_are_softer_than_they_were():
+    """Siri, 11/25: "softer, less saturated light-mode shades (still
+    WCAG AA on the page); dark mode unchanged. Keep the three regions
+    clearly distinct."
+
+    All four halves of that, measured. The hue ANGLE is held exactly
+    where it was, which is what keeps amber amber: softening is a move
+    in saturation and lightness, not a new colour.
+    """
+    import colorsys
+
+    def hsl(colour):
+        red, green, blue = (part / 255 for part in views._parts(colour))
+        hue, light, sat = colorsys.rgb_to_hls(red, green, blue)
+        return hue, light, sat
+
+    assert set(views.SCOPE_WORD_COLOURS) == set(views.SCOPE_HUES)
+    page = views.page_colour(views.LIGHT_MODE)
+
+    for region, pair in views.SCOPE_WORD_COLOURS.items():
+        word, hue_pair = pair[0], views.SCOPE_HUES[region]
+
+        # 1. Dark mode untouched, which is the half that was not asked
+        # about - and in dark the word and the hue are one colour.
+        assert pair[1] == hue_pair[1], region
+
+        # 2. Softer: less saturated than the hue it comes from, and no
+        # darker, at the same hue angle.
+        word_hue, word_light, word_sat = hsl(word)
+        hue_hue, hue_light, hue_sat = hsl(hue_pair[0])
+        assert word_sat < hue_sat, f"{region} is no less saturated"
+        assert word_light >= hue_light, f"{region} got darker, not softer"
+        assert abs(word_hue - hue_hue) < 0.01, f"{region} changed hue"
+
+        # 3. Still AA on the page it is written on, with margin: this
+        # project has refused a shade at 4.53:1 before for having none.
+        ratio = views.contrast_ratio(word, page)
+        assert ratio >= views.AA_TEXT, f"{region}: {ratio:.2f}:1"
+        assert ratio >= 5.0, f"{region} clears AA by too little: {ratio:.2f}:1"
+
+        # 4. And still a COLOURED word rather than the body text with a
+        # different name on it.
+        assert views.colour_distance(
+            word, views.text_colour(views.LIGHT_MODE)
+        ) >= views.DIFFERENT, region
+
+    # 5. Three regions a reader can still tell apart - the bar that
+    # stopped the softening, since desaturating pulls every hue toward
+    # the same neutral.
+    for mode, end in enumerate(views.MODES):
+        shades = [pair[mode] for pair in views.SCOPE_WORD_COLOURS.values()]
+        for first in range(len(shades)):
+            for second in range(first + 1, len(shades)):
+                apart = views.colour_distance(shades[first], shades[second])
+                assert apart >= views.DISTINCT, (
+                    f"{end}: {shades[first]} and {shades[second]} are only "
+                    f"{apart:.1f} apart"
+                )
+
+
+def test_a_panel_takes_the_saturated_end_of_its_hue():
+    """WHY THERE ARE TWO RECORDS, and not one softened one (11/25).
+
+    A word has the page behind it. A panel carries its hue at twelve
+    percent and then writes IN that hue on top of the wash, which is a
+    harder job for the same colour - and the measurement is the reason
+    this split exists: the softened amber reads at 4.37:1 on its own
+    12% amber, under AA, at every alpha strong enough to see the wash.
+    So the synthetic banner and the two download buttons keep the
+    saturated end.
+    """
+    assert views.SYNTHETIC_COLOUR == views.SCOPE_HUES["north"]
+    assert views.EXCEL_COLOUR == views.SCOPE_HUES["south"]
+    assert views.CSV_COLOUR == views.SCOPE_HUES[views.NETWORK_REGION]
+    assert views.CAUTION_COLOUR == views.SCOPE_HUES["north"]
+
+    def over(shade, alpha, background):
+        return views.composite_over(
+            "rgba(%d, %d, %d, %s)" % (*views._parts(shade), alpha),
+            background,
+        )
+
+    for mode, index in zip(views.MODES, (0, 1)):
+        page = views.page_colour(mode)
+        hue = views.SCOPE_HUES["north"][index]
+        word = views.SCOPE_WORD_COLOURS["north"][index]
+        washed = over(hue, views.PANEL_ALPHA, page)
+
+        # The hue reads on its own wash...
+        assert views.contrast_ratio(hue, washed) >= views.AA_TEXT, mode
+        # ...and in light mode the softened word would not, which is the
+        # whole reason the two records are not one.
+        if mode == views.LIGHT_MODE:
+            assert views.contrast_ratio(word, washed) < views.AA_TEXT, (
+                "the soft shade now reads on its own wash - if that is "
+                "real, the two records can become one again"
+            )
+
+
+def test_the_download_row_has_clear_space_above_it():
+    """Siri, 11/25: "clear space between each table and its download
+    buttons", at least about 16px.
+
+    The pixels are measured in the browser test. What is checked here is
+    that there is a rule at all, that it is asked for in a unit a
+    browser reads as more than 16px at the default root size, and that
+    the container the rule needs really is on the page - a stylesheet
+    aimed at a class nobody wears is the quiet way this kind of change
+    fails.
+    """
+    sheet = views.download_style()
+    assert f".st-key-{views.DOWNLOAD_ROW_KEY}" in sheet
+    assert f"margin-top: {views.TABLE_GAP}" in sheet
+
+    size = float(views.TABLE_GAP.removesuffix("rem"))
+    assert views.TABLE_GAP.endswith("rem")
+    assert size * 16 >= 16, views.TABLE_GAP
+
+    app = app_test().run()
+    assert not app.exception
+    assert views.DOWNLOAD_ROW_KEY in page_style(app)
+    # One row per view, and the key names the container the buttons are
+    # drawn in - which is what the rule reaches them through.
+    source = (
+        Path(__file__).resolve().parents[1] / "app" / "dashboard.py"
+    ).read_text(encoding="utf-8")
+    assert "st.container(key=views.DOWNLOAD_ROW_KEY)" in source

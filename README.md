@@ -236,12 +236,24 @@ luminance on the cream page and demands at least 0.20 on the charcoal one, so
 there is no single hex in between. `light-dark()` resolves that, because
 Streamlit sets `color-scheme` on the app element and flips it on a menu switch
 with no rerun — measured in a real browser, not assumed. The scope hues are the
-ones the workbook already tints a scope cell with: amber for the North cluster
-(6.2:1 light, 9.5:1 dark), violet for the South (8.1 and 6.8), slate for the
-back office (6.9 and 8.2), at least 44.8 apart by CIE delta-E. One line under
-the table says what the three words mean, in the same three colours, and it
-replaced the two keys with swatches that used to explain a colour that no
-longer exists.
+ones the workbook already tints a scope cell with: amber for the North cluster,
+violet for the South, slate for the back office. One line under the table says
+what the three words mean, in the same three colours, and it replaced the two
+keys with swatches that used to explain a colour that no longer exists.
+
+The light-mode shades were **softened** on 25 November, because the in-house
+testers found them loud on a cream page: the hue angle of each is held exactly
+where it was, and the search walked saturation down and lightness up — a 23%
+cut in saturation — which is as far as the three can soften together. The bar
+that stopped it was not contrast but distinctness: desaturating pulls every hue
+toward the same neutral, and the closest pair was only 44.8 apart to begin
+with. The words now read at 5.1:1, 5.3:1 and 5.1:1 on the cream page, 42.6
+apart at the closest, and dark mode is untouched (9.5, 6.8 and 8.2, 48.0
+apart). The **panels** keep the saturated end of the same three hues, and that
+split is measured rather than stylistic: a panel carries its hue at 12% and
+then writes in that hue on top of the wash, and the softened amber reads at
+4.37:1 on its own amber — under AA — at every alpha strong enough to see the
+wash at all.
 
 Those tables are therefore the page's own HTML rather than `st.dataframe`,
 because the grid paints its cells on a canvas where no CSS and no markdown can
@@ -260,9 +272,27 @@ sit at least 22 from each other, and the label still clears AA on either. They
 are not equally loud hues, so one shared strength left either slate invisible
 or violet shouting. The **SYNTHETIC** banner is a 12% wash of the amber with
 its lead word in the hue, rather than the filled warning block it was, which
-read as "something is wrong here" when nothing is. The run-summary and
-instruction banners are the same design in both palettes: a wash of the blue
-with the text in the blue that reads on that page, and a thin edge. And picking
+read as "something is wrong here" when nothing is.
+
+**Every notice on the page is drawn the same way** as of 25 November: a wash of
+its hue, the sentence written in that hue, and a thin left edge — the design
+the workbook's findings already used. Twelve of them were Streamlit's own
+`st.info`, `st.warning` and `st.error` blocks, which in light mode are filled
+panels in a palette that was never this page's; the testers named the last one
+a reader meets ("Set the controls above and press Run") and it was true of all
+twelve. The hue is the only thing that differs between them, and there are
+three because a notice here is in one of three registers that are not
+interchangeable: **blue** for something to know or to do next, **amber** for
+something true and allowed and worth reading twice, **red** for a value the
+model or the validator refused. A refusal drawn in the finding's calm blue
+would be a worse light mode than the block it replaced. Each one is measured on
+every surface it is drawn on, the sidebar included, where the wash sits over
+the panel colour rather than the page: the worst sentence reads at 4.8:1. What
+they gave up is Streamlit's Material icon beside each; a lead word in the
+sentence — *Refused*, *Queued*, *Out of date* — says the same thing in
+something a screen reader can also read. There is also **clear space** between
+each table and the two download buttons under it, which sat flush against the
+detail table at 1440 before this round: measured at zero. And picking
 a different run scrolls the main column back to the top, because a run is a
 whole page and a reader who was at week 40 of the table should not land in the
 middle of the next one.
@@ -327,8 +357,12 @@ One pair is still open: the no-change blue against the teal accent in dark
 mode, 32.8, recorded as a deliberately failing test rather than written off.
 A colour is a thing done to the screen; the CSV is the same bytes it always
 was. **The workbook wears the same palette** as of 11/23: its header rows are
-the page's own teal in white bold rather than the navy they were, which was a
-colour that appeared nowhere on the page; a row's Scope cell carries its
+in white bold on the page's own **dark slate** (`#44586B`) at 7.4:1 — the back
+office's hue, so the header row sits with the sand, the lilac and the violet in
+the cells under it. It was the navy nothing on the page used, then the accent
+teal at 4.8:1, which is the colour of every slider and focus ring on the
+dashboard and was chosen in the first place because it means nothing: a
+spreadsheet has no sliders, so there it meant nothing twice; a row's Scope cell carries its
 region, and a run's name on Capacity Scenarios carries its kind, in the same
 six colours — mixed down onto the cream page, because Excel has no transparency
 and a spreadsheet is a light-mode document. A test composites each of the
@@ -405,7 +439,7 @@ offers a table to take away, **Download Excel (formatted)** sits first and
 **Download CSV (raw data)** beside it. The Excel file is exactly what is on
 screen — the same rows, in the same order, under the same headers, for the run
 and the filters showing — wearing the workbook's own styling, because it is
-written by the exporter rather than by a second set of rules: Arial, the teal
+written by the exporter rather than by a second set of rules: Arial, the slate
 header row, the same number formats, negatives in parentheses, a frozen header
 with a filter on it, and the hours gap and the totals still live Excel
 formulas. It says above the table which run it is and what was filtered out, so
@@ -433,7 +467,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 890 tests, about 82 minutes
+# The validation checks: 899 tests, about 82 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -473,11 +507,11 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-890 tests across 25 files: 889 passing, and 1 that fails on purpose and is
+899 tests across 25 files: 898 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 26th file, `tests/test_live_colours.py`, holds 39 more that drive a real
+A 26th file, `tests/test_live_colours.py`, holds 45 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
 read back the colours actually painted; they check every card on every run
 against what the model says that measure did, card by card, rather than asking
@@ -491,7 +525,12 @@ stylesheet that silently never arrived and a scroll that ran once per session
 and then stopped. Since 25 November they also read the angle off every axis
 and legend label at both widths, which is the only place the rotation Siri
 found could be seen: the spec asked for nothing and Vega-Lite rotated the
-labels anyway. They need playwright, which is
+labels anyway. They also measure the pixels between each table and its
+download buttons, at both widths and on a custom run — which is how the gap
+under the detail table was found to be exactly zero — and they read back every
+notice as painted, in both palettes and in the sidebar, where the wash sits
+over the panel colour rather than over the page. They need playwright, which
+is
 deliberately not in `requirements.txt`, so they skip themselves when it is
 absent — the file says how to run them. They exist because every other test
 here asks Python what colour something is, and the bug they were written for

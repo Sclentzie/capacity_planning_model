@@ -86,6 +86,17 @@ SPEC_BUTTON = "load_spec_defaults"
 ADVANCED_ADD = "advanced_add"
 CONTROLS_PER_ROW = 3
 
+# ONE SENTENCE, WRITTEN ONCE. Both views that can be emptied by the role
+# filter say this, and they were two copies of it until 11/25 - which is
+# two chances for them to drift by a word while a reviewer reads one of
+# them. It is a note rather than a warning: nothing is wrong, the reader
+# has simply unticked everything, and the second half says what to do
+# about it.
+NO_ROLES_NOTE = (
+    "No roles selected, so there is nothing to chart or list. Pick at "
+    "least one role in the sidebar."
+)
+
 
 @st.cache_data
 def saved_results():
@@ -177,6 +188,32 @@ def show_intro(results, dimensions):
         st.markdown(line)
 
 
+def notice(text, tone="note", lead=None, sidebar=False):
+    """One notice, in the Finding banner's design (Siri, 11/25, round 3).
+
+    EVERY NOTICE ON THIS PAGE GOES THROUGH HERE. They were st.info,
+    st.warning and st.error - Streamlit's own alert blocks, which are
+    filled panels in a palette that was never this page's, and in light
+    mode they read as something pasted in from another application. The
+    reviewers said so about the last one of them a reader meets ("Set
+    the controls above and press Run"), and it was true of all twelve.
+
+    The design is the one already approved on this page for the
+    workbook's findings: a wash of the hue, the sentence written in that
+    hue, a thin left edge. views.NOTICE_TONES carries the three hues and
+    why there are three rather than one.
+
+    WHAT WE GAVE UP. Streamlit drew a Material icon beside each of these
+    and this draws none: the Finding banner has no icon either, and one
+    design with two different ornaments is two designs. What the icon
+    said, the lead word says in a word a screen reader can also read.
+    """
+    where = st.sidebar if sidebar else st
+    where.markdown(
+        views.banner_html(text, tone, lead=lead), unsafe_allow_html=True
+    )
+
+
 def synthetic_banner(meta):
     """The synthetic statement, on the page itself.
 
@@ -207,12 +244,13 @@ def staleness_banner(meta):
     changed = sorted(
         name for name, mark in saved.items() if current_inputs().get(name) != mark
     )
-    st.error(
+    notice(
         "These saved results were built from different inputs ("
         + ", ".join(changed)
         + "). Rebuild with `python -m capacity_model.api` before trusting "
         "the figures below.",
-        icon=":material/warning:",
+        tone="refused",
+        lead="Out of date",
     )
 
 
@@ -333,7 +371,10 @@ def pick_filters(dimensions):
 
     note = views.scope_note(dimensions, choice)
     if note:
-        st.sidebar.info(note, icon=":material/info:")
+        # In the sidebar, which is a step off the page colour - so the
+        # wash is measured against that background too, not only
+        # against the page.
+        notice(note, sidebar=True)
 
     return choice, picked
 
@@ -492,7 +533,12 @@ def show_downloads(excel, csv, help_text=CSV_HELP, legend=None):
     noticed the tints is already looking.
     """
     widths = [2, 2, 4] if legend is not None else [1, 1]
-    columns = st.columns(widths, vertical_alignment="center")
+    # IN ITS OWN KEYED CONTAINER, so the stylesheet can put clear space
+    # between the table above and these buttons (Siri, 11/25, round 3).
+    # The columns go inside it: the margin belongs to the row, not to
+    # either button, or the two would drift apart from each other.
+    row = st.container(key=views.DOWNLOAD_ROW_KEY)
+    columns = row.columns(widths, vertical_alignment="center")
     # EACH IN ITS OWN KEYED CONTAINER (11/24). Streamlit puts the key on
     # the element as a class, and that class is the only handle a
     # stylesheet gets on a widget it does not own - which is how each
@@ -878,7 +924,7 @@ def draw_advanced():
         found = controls.search_inputs(query) if query else []
 
         if query and not found:
-            st.info("No input matches that.", icon=":material/search_off:")
+            notice("No input matches that.")
         if found:
             st.dataframe(
                 pd.DataFrame(
@@ -933,11 +979,12 @@ def draw_advanced():
                 try:
                     value = controls.coerce(typed, baseline_of[picked])
                 except (TypeError, ValueError) as refused:
-                    st.error(
+                    notice(
                         f"{picked}: {refused}. The baseline is "
                         f"{baseline_of[picked]!r}, so this input wants a "
                         f"{type(baseline_of[picked]).__name__}.",
-                        icon=":material/block:",
+                        tone="refused",
+                        lead="Refused",
                     )
                 else:
                     try:
@@ -947,7 +994,8 @@ def draw_advanced():
                         # this because no formula complains about it.
                         controls.guard(picked, value)
                     except ValueError as refused:
-                        st.error(str(refused), icon=":material/block:")
+                        notice(str(refused), tone="refused",
+                               lead="Refused")
                     else:
                         advanced_changes()[picked] = value
                         st.rerun()
@@ -975,7 +1023,11 @@ def draw_advanced():
                     path, value, controls.baseline_of_input(path)
                 )
                 if warning:
-                    st.warning(warning, icon=":material/warning:")
+                    # The amber tone, not the red one: this change IS in
+                    # the run. The lead says so in the one word a reader
+                    # needs, because the red of a refusal next to a
+                    # change that was accepted would be a lie.
+                    notice(warning, tone="caution", lead="Queued")
 
 
 def run_custom(catalogue):
@@ -998,9 +1050,9 @@ def run_custom(catalogue):
         # the run.
         api.check_overrides(mapping)
     except (KeyError, TypeError, ValueError) as refused:
-        st.error(
-            f"These inputs were refused: {refused}", icon=":material/block:"
-        )
+        # No lead word: the sentence already says it was refused, and a
+        # lead that repeats the sentence is an ornament.
+        notice(f"These inputs were refused: {refused}", tone="refused")
         return None
 
     # The break windows, in the panel's own words, against the opening
@@ -1013,7 +1065,7 @@ def run_custom(catalogue):
     )
     if problems:
         for problem in problems:
-            st.error(problem, icon=":material/block:")
+            notice(problem, tone="refused", lead="Refused")
         return None
 
     signature = controls.signature(mapping)
@@ -1025,9 +1077,8 @@ def run_custom(catalogue):
         try:
             controls.run_signature(signature)
         except (KeyError, TypeError, ValueError) as refused:
-            st.error(
-                f"The model refused these inputs: {refused}",
-                icon=":material/block:",
+            notice(
+                f"The model refused these inputs: {refused}", tone="refused"
             )
             return None
     if controls.run_signature.cache_info().hits > hits_before:
@@ -1081,11 +1132,7 @@ def show_custom_result(saved, catalogue, signature, choice, roles):
 
     show_cards(bundle, key)
     if not roles:
-        st.warning(
-            "No roles selected, so there is nothing to chart or list. Pick "
-            "at least one role in the sidebar.",
-            icon=":material/filter_alt_off:",
-        )
+        notice(NO_ROLES_NOTE)
         return
     show_charts(bundle, key, choice, roles)
     show_detail(bundle, key, choice, roles, changes=changes)
@@ -1142,9 +1189,11 @@ def show_build_your_own(saved, dimensions):
 
     signature = st.session_state.get(SIGNATURE_STATE)
     if not signature:
-        st.info(
-            "Set the controls above and press Run.", icon=":material/tune:"
-        )
+        # THE ONE THE REVIEWERS NAMED (Siri, 11/25). It was an st.info:
+        # a filled blue-gray block at the bottom of a cream page, which
+        # is the last thing a reader meets on this view and the thing
+        # they said looked out of place.
+        notice("Set the controls above and press Run.")
         return
 
     st.divider()
@@ -1227,11 +1276,7 @@ def main():
     show_cards(results, key)
 
     if not roles:
-        st.warning(
-            "No roles selected, so there is nothing to chart or list. Pick "
-            "at least one role in the sidebar.",
-            icon=":material/filter_alt_off:",
-        )
+        notice(NO_ROLES_NOTE)
         return
 
     show_charts(results, key, choice, roles)

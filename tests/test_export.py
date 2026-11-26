@@ -673,7 +673,7 @@ def test_money_hours_and_days_each_have_their_own_format(book):
 # ---------------------------------------------------------------------------
 
 
-def test_every_header_row_wears_the_dashboard_teal(book):
+def test_every_header_row_wears_the_dashboard_slate(book):
     """One accent, in one place, used by both.
 
     Checked on every tab rather than on one, because a header fill is
@@ -696,16 +696,18 @@ def test_every_header_row_wears_the_dashboard_teal(book):
                     cell.font.color.rgb
                 ).endswith("FFFFFF"):
                     # A white-on-colour cell is a header, and the only
-                    # colour a header may wear is the page's accent.
+                    # colour a header may wear is the page's slate.
                     assert rgb.endswith(export.HEADER_COLOUR), (
                         name, cell.coordinate, rgb,
                     )
                     assert cell.font.bold, (name, cell.coordinate)
                     seen += 1
     assert seen > 100, seen
-    assert f"#{export.HEADER_COLOUR}".lower() == views.ACCENT_COLOURS[
-        views.LIGHT_MODE
-    ].lower()
+    # The page's slate, not its accent teal, since 11/25: the reasoning
+    # is in test_download.test_the_header_slate_is_the_page_s_own_slate.
+    assert f"#{export.HEADER_COLOUR}".lower() == views.SCOPE_HUES[
+        views.NETWORK_REGION
+    ][0].lower()
 
 
 def test_the_scope_cell_carries_its_region_on_every_tab_that_has_one(book):

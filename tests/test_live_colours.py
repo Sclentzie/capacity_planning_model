@@ -1381,3 +1381,250 @@ def test_every_chart_label_is_readable_on_the_page_it_sits_on(page, mode, label)
             )
     assert not faint, "\n".join(sorted(set(faint))[:6])
     set_theme(page, "Light")
+
+
+# ---------------------------------------------------------------------------
+# Round 3 (Siri, 11/25): air under every table, and every notice a banner
+# ---------------------------------------------------------------------------
+
+# The gap between a table and the first download button under it, in
+# pixels the browser actually laid out. Measured from the table's own
+# scrolling frame rather than from the element Streamlit wraps it in,
+# because the frame is the edge a reader sees.
+TABLE_GAPS = """
+  () => {
+    const buttons = Array.from(
+      document.querySelectorAll('[data-testid="stDownloadButton"] button')
+    ).map(node => node.getBoundingClientRect());
+    return Array.from(document.querySelectorAll('.cm-table-wrap')).map(
+      (table, index) => {
+        const frame = table.getBoundingClientRect();
+        const below = buttons
+          .filter(box => box.top >= frame.bottom - 1)
+          .sort((one, other) => one.top - other.top);
+        return {
+          table: index,
+          width: Math.round(frame.width),
+          gap: below.length ? Math.round(below[0].top - frame.bottom) : null,
+        };
+      });
+  }
+"""
+
+# At least ~16px, which is what Siri asked for. The rule asks for
+# 1.5rem = 24px, so there is room above the bar rather than on it.
+TABLE_GAP_FLOOR = 16
+
+
+def table_gaps(tab):
+    tab.wait_for_selector(".cm-table-wrap", timeout=30000)
+    tab.wait_for_timeout(1500)
+    found = tab.evaluate(TABLE_GAPS)
+    assert found, "no table on the page to measure"
+    return found
+
+
+@pytest.mark.parametrize("width", (1440, 1920))
+def test_each_table_has_clear_space_above_its_downloads(page, width):
+    """THE BUTTONS SAT FLUSH AGAINST THE TABLE (Siri, 11/25, round 3).
+
+    Measured before the fix at 1440, on the detail table: the first
+    download button's top edge was the table's bottom edge - a gap of
+    zero - so the row of buttons read as the last row of the table.
+
+    Both views that draw a table, at both widths Siri named. A custom
+    run's table has its own test below, because reaching it means
+    running the model.
+    """
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.wait_for_timeout(600)
+    set_theme(page, "Light")
+
+    for view in (views.ONE_RUN_VIEW, views.COMPARE_VIEW):
+        pick(page, view)
+        for row in table_gaps(page):
+            assert row["gap"] is not None, f"{view}: no button under a table"
+            assert row["gap"] >= TABLE_GAP_FLOOR, (
+                f"{view} at {width}: only {row['gap']}px between the table "
+                f"and its downloads"
+            )
+    pick(page, views.ONE_RUN_VIEW)
+
+
+def test_a_custom_run_s_table_has_the_same_space(page):
+    """The third table Siri listed, which costs a model run to reach.
+
+    One width rather than two, and one run rather than one per width:
+    this is the same row of buttons drawn by the same function under the
+    same rule, so what is being checked here is that the panel really
+    does draw it that way - not the arithmetic, which the two widths
+    above already measure.
+    """
+    page.set_viewport_size({"width": 1440, "height": 1200})
+    page.wait_for_timeout(600)
+    set_theme(page, "Light")
+    pick(page, views.BUILD_VIEW)
+    page.wait_for_timeout(2000)
+
+    # The panel's own Run button, by the key the page gives it.
+    button = page.query_selector(".st-key-run_custom button")
+    assert button, "the Run button is not on the panel"
+    button.evaluate("node => node.click()")
+    # A full plan year takes about twenty-five seconds; the selector
+    # wait is what actually decides when the table is there.
+    page.wait_for_timeout(30000)
+    page.wait_for_selector(".cm-table-wrap", timeout=150000)
+    page.wait_for_timeout(2000)
+
+    rows = table_gaps(page)
+    for row in rows:
+        assert row["gap"] is not None, "no button under the custom table"
+        assert row["gap"] >= TABLE_GAP_FLOOR, (
+            f"a custom run leaves only {row['gap']}px above its downloads"
+        )
+    # PUT THE PANEL BACK. A run lives in session state, and the module
+    # shares one browser tab - so a test that runs the model and walks
+    # away leaves the next one looking at a result where it expected an
+    # empty panel. That is what it did, the first time this was run.
+    reset_panel(page)
+    pick(page, views.ONE_RUN_VIEW)
+    set_theme(page, "Light")
+
+
+def reset_panel(page):
+    """The panel's own Reset button, which forgets the run in state."""
+    button = page.query_selector(".st-key-reset_custom button")
+    if button:
+        button.evaluate("node => node.click()")
+        page.wait_for_timeout(3000)
+
+
+# Every banner on the page as painted: the class it wears, the colour of
+# its sentence, the fill behind it and the edge down its left side.
+PAINTED_BANNERS = """
+  () => Array.from(document.querySelectorAll('.cm-banner')).map(node => {
+    const style = getComputedStyle(node);
+    return {
+      cls: node.className,
+      text: node.textContent.trim().slice(0, 60),
+      colour: style.color,
+      fill: style.backgroundColor,
+      edge_width: style.borderLeftWidth,
+      edge: style.borderLeftColor,
+      in_sidebar: !!node.closest('[data-testid="stSidebar"]'),
+    };
+  })
+"""
+
+# Streamlit's own alert blocks, which is what every notice on this page
+# used to be. Both test ids, because Streamlit has moved it once.
+ALERT_BLOCKS = """
+  () => document.querySelectorAll(
+    '[data-testid="stAlert"], [data-testid="stAlertContainer"]').length
+"""
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_every_notice_is_painted_as_a_banner(page, mode, label):
+    """Siri, 11/25: the "Set the controls" message looked out of place.
+
+    It was an st.info - a filled block in Streamlit's own palette - and
+    so were ten other notices on this page. This drives the view the
+    reviewers were looking at, in both palettes, and reads back what the
+    browser painted: the sentence in the tone's hue, a wash of that hue
+    behind it, a thin left edge, and no Streamlit alert block anywhere.
+    """
+    set_theme(page, label)
+    pick(page, views.BUILD_VIEW)
+    page.wait_for_timeout(2500)
+    # BEFORE A RUN, which is the state this notice exists in - and the
+    # test above this one leaves a run in session state.
+    reset_panel(page)
+    page.wait_for_selector(".cm-banner.cm-note", timeout=30000)
+
+    assert page.evaluate(ALERT_BLOCKS) == 0, (
+        "a Streamlit alert block is still drawn on this page"
+    )
+
+    paper = background(page)
+    assert paper == views.page_colour(mode)
+
+    banners = page.evaluate(PAINTED_BANNERS)
+    notes = [row for row in banners if "cm-note" in row["cls"]]
+    assert notes, f"{mode}: no note banner on the panel"
+    assert any("press Run" in row["text"] for row in notes), notes
+
+    expected = views.NOTICE_TONES["note"][0 if mode == views.LIGHT_MODE else 1]
+    for row in notes:
+        # The sentence is written in the hue - which is the half of this
+        # design that is NOT a wash, and the half a reader reads.
+        assert as_hex(row["colour"]) == expected, (mode, row)
+        # A thin left edge in the same hue.
+        assert row["edge_width"] == views.NOTICE_EDGE, row
+        assert as_hex(row["edge"]) == expected, row
+        # A wash, not a fill: the page shows through, so the panel is
+        # the same design over either palette.
+        assert row["fill"].startswith("rgba("), row["fill"]
+        alpha = float(row["fill"].rstrip(")").split(",")[-1])
+        assert 0 < alpha <= views.PANEL_DARK_ALPHA, row["fill"]
+        # And readable on what it is actually sitting on: the fill the
+        # browser reports, composited over the page the browser reports.
+        washed = views.composite_over(row["fill"], paper)
+        ratio = views.contrast_ratio(as_hex(row["colour"]), washed)
+        assert ratio >= views.AA_TEXT, (
+            f"{mode}: the sentence is {ratio:.2f}:1 on its own wash"
+        )
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)
+
+
+def test_a_notice_in_the_sidebar_is_a_banner_too(page):
+    """The back-office note, which is written where the filter is.
+
+    It was an st.sidebar.info, and the sidebar is a step off the page
+    colour - so this is the one notice whose wash is composited over
+    something other than the page, and the only way to know what a
+    reader meets there is to read it off the sidebar.
+    """
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_timeout(1500)
+
+    # A site view, which is what drops the back-office roles and writes
+    # the note. Opened FROM THE KEYBOARD: measured, a click on the
+    # select - playwright's or the DOM's - leaves the dropdown closed,
+    # and focus plus ArrowDown is what opens it.
+    box = page.query_selector(
+        '[data-testid="stSidebar"] [data-testid="stSelectbox"] input')
+    assert box, "no scope selectbox in the sidebar"
+    box.focus()
+    page.keyboard.press("ArrowDown")
+    page.wait_for_timeout(1500)
+    options = page.query_selector_all('[role="option"]')
+    assert options, "the scope selectbox never opened"
+    for option in options:
+        if "N1" in option.inner_text():
+            option.evaluate("node => node.click()")
+            break
+    else:
+        pytest.fail("no site option in the scope selectbox")
+    page.wait_for_timeout(3000)
+
+    banners = [
+        row for row in page.evaluate(PAINTED_BANNERS) if row["in_sidebar"]
+    ]
+    assert banners, "the back-office note is not in the sidebar"
+    assert page.evaluate(ALERT_BLOCKS) == 0
+    expected = views.NOTICE_TONES["note"][0]
+    for row in banners:
+        assert as_hex(row["colour"]) == expected, row
+        assert row["edge_width"] == views.NOTICE_EDGE, row
+        # Readable on the sidebar, which is what it is sitting on: the
+        # wash is translucent, so the colour underneath is the panel.
+        washed = views.composite_over(
+            row["fill"], views.SIDEBAR_COLOURS[views.LIGHT_MODE]
+        )
+        ratio = views.contrast_ratio(as_hex(row["colour"]), washed)
+        assert ratio >= views.AA_TEXT, f"{ratio:.2f}:1 in the sidebar"

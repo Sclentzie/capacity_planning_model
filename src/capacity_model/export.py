@@ -207,10 +207,20 @@ BODY_ITALIC = Font(name=FONT, size=10, italic=True)
 # paints.
 # ---------------------------------------------------------------------------
 
-# The dashboard's accent teal (views.ACCENT_COLOURS light), with white
-# bold text at 4.84:1 - past the 4.5 AA asks for body text, and these are
-# headers. The navy it replaces was never anywhere on the page.
-HEADER_COLOUR = "3A7A8C"
+# DARK SLATE, with white bold text at 7.36:1 (Siri, 11/25, round 3).
+#
+# It is the page's own slate hue - views.SCOPE_HUES["network"] at its
+# light end, the colour the back office is written in and the CSV button
+# is edged with - so the header row of every sheet sits with the sand,
+# the lilac and the violet in the cells below it rather than beside them.
+# The teal #3A7A8C it replaces is the dashboard's ACCENT: the colour of
+# every slider, button and focus ring, chosen in the first place because
+# it means nothing. A spreadsheet has no sliders, so in the workbook the
+# accent meant nothing twice.
+#
+# A test holds this to the record in views rather than to the string
+# here, and white on it goes from 4.84:1 to 7.36:1 on the way past.
+HEADER_COLOUR = "44586B"
 HEADER_FILL = PatternFill("solid", fgColor=HEADER_COLOUR)
 
 # Which region a row's scope sits in: the two clusters and the back

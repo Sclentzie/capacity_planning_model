@@ -1998,25 +1998,69 @@ def live_wash(pair, alpha, dark_alpha=None):
     )
 
 
-# THE THREE SCOPE WORDS, measured on 11/24 against both pages. The hues
-# are the ones the workbook already tints a scope cell with - amber for
-# the North cluster, violet for the South, slate for the back office - so
-# a reader with the Excel file open beside the page sees the same three
-# families. These are the TEXT ends of those hues: dark enough to read on
-# cream, pale enough to read on charcoal.
+# THE THREE SCOPE HUES, measured on 11/24 against both pages. They are
+# the ones the workbook already tints a scope cell with - amber for the
+# North cluster, violet for the South, slate for the back office - so a
+# reader with the Excel file open beside the page sees the same three
+# families.
+#
+# THIS RECORD IS THE SATURATED END of each hue, and it is what a PANEL is
+# washed and edged with: the synthetic banner and the two download
+# buttons. A panel asks more of a hue than a word does. It carries the
+# colour at twelve percent and then writes IN that colour on top of it,
+# so the hue has to be dark enough to read on its own wash - which the
+# softer shades below are not: measured, the softened amber lead word
+# came out at 4.37:1 on its own 12% amber, under AA, at every alpha
+# strong enough for the wash to be visible at all.
 #
 #                          light          dark
 #   north   amber/bronze   6.24:1         9.50:1
 #   south   violet         8.09:1         6.81:1
 #   network slate          6.89:1         8.20:1
-#
-# Apart from each other by CIE delta-E 44.8 at the closest in light and
-# 48.0 in dark, against the 40 this file calls DISTINCT. A test
-# recomputes all of it rather than trusting this table.
-SCOPE_WORD_COLOURS = {
+SCOPE_HUES = {
     "north": ("#7d5410", "#e8b964"),
     "south": ("#5b3a8c", "#be8fe8"),
     NETWORK_REGION: ("#44586b", "#9fb6c6"),
+}
+
+# THE SAME THREE HUES AT THEIR SOFT END, which is what a scope WORD on
+# the page is written in (Siri, 11/25, round 3: "keep bold in both modes,
+# but use softer, less saturated light-mode shades").
+#
+# ONLY THE LIGHT END MOVES. Dark was not asked about and is not touched,
+# so in dark mode this table and SCOPE_HUES above are the same three
+# colours; in light mode these are the softer ones.
+#
+# SEARCHED, NOT PICKED. Each hue ANGLE is held exactly where it was - so
+# amber is still amber - and the search walked saturation down and
+# lightness up, which are the two directions "softer" means, keeping
+# every bar this project already holds these words to:
+#
+#                       saturation      on the cream page
+#   north   amber       0.77 -> 0.59    6.24:1 -> 5.12:1
+#   south   violet      0.41 -> 0.32    8.09:1 -> 5.29:1
+#   network slate       0.22 -> 0.17    6.89:1 -> 5.08:1
+#
+# A 23% cut in saturation is as far as the three can soften together:
+# desaturating pulls every hue toward the same neutral, and the closest
+# pair - violet against slate - was only 44.8 apart to begin with, so the
+# bar that stops the cut is DISTINCT rather than AA. At these three the
+# worst pair is 42.6 in light and 48.0 in dark, and the worst word reads
+# at 5.08:1 against the 4.5 AA asks. Both have margin on purpose: this
+# project has refused a shade at 4.53:1 before for having none.
+#
+# WORTH KNOWING, and not a regression this round introduced: the slate is
+# a NEUTRAL, so it sits nearer the teal accent than a hue would - 17.1
+# apart before this change and 13.3 after. Nothing on this page reads a
+# scope by colour alone (the cell says N1, or S2, or NETWORK), and the
+# same arithmetic is why the sensitivity gray is held to DIFFERENT rather
+# than DISTINCT further up this file.
+#
+# A test recomputes all of it rather than trusting this table.
+SCOPE_WORD_COLOURS = {
+    "north": ("#896223", "#e8b964"),
+    "south": ("#7757a8", "#be8fe8"),
+    NETWORK_REGION: ("#596c7e", "#9fb6c6"),
 }
 
 # The kind words use the SAME hexes Streamlit paints a kind with
@@ -2034,13 +2078,16 @@ KIND_WORD_COLOURS = {
 # Streamlit's blue and gray. Violet leads and slate follows, which is the
 # order the buttons are in: Excel is the one almost everybody wants, and
 # the CSV is for whoever is doing arithmetic on it.
-EXCEL_COLOUR = SCOPE_WORD_COLOURS["south"]
-CSV_COLOUR = SCOPE_WORD_COLOURS[NETWORK_REGION]
+#
+# THE HUE, not the softened word shade: these are panels, and the reason
+# a panel takes the saturated end is written above SCOPE_HUES.
+EXCEL_COLOUR = SCOPE_HUES["south"]
+CSV_COLOUR = SCOPE_HUES[NETWORK_REGION]
 
 # The synthetic banner takes the third scope hue. Softer than the warning
 # yellow it replaces - a 12% wash and an edge rather than a filled block
 # - and still the first coloured thing on the page.
-SYNTHETIC_COLOUR = SCOPE_WORD_COLOURS["north"]
+SYNTHETIC_COLOUR = SCOPE_HUES["north"]
 
 # The run-summary and instruction banners keep the blue they have always
 # had, which is the one the reviewers liked in dark mode. Read out of
@@ -2051,6 +2098,40 @@ SYNTHETIC_COLOUR = SCOPE_WORD_COLOURS["north"]
 NOTE_COLOUR = (
     RENDERED_COLOURS["blue"][LIGHT_MODE],
     RENDERED_COLOURS["blue"][DARK_MODE],
+)
+
+# EVERY NOTICE ON THE PAGE IS ONE OF THESE (Siri, 11/25, round 3: the
+# "Set the controls" message "still looks out of place" in light mode).
+#
+# It was an st.info, and so were eleven other notices on this page:
+# Streamlit's own alert blocks, which are filled panels in a palette of
+# their own that was never this page's. The design they move to is the
+# Finding banner's, unchanged - a wash of the hue, the sentence in that
+# hue, a thin left edge - because that is the one a reviewer has already
+# approved on this page.
+#
+# THREE HUES, NOT ONE, and the hue is the only thing that differs. A
+# notice on this page is in one of three registers, and they are not
+# interchangeable: "here is something to know" is not "this value was
+# refused", and a refusal drawn in the Finding's calm blue would be a
+# worse light mode than the filled block it replaces. So:
+#
+#   note      blue    something to know, or to do next
+#   caution   amber   true, allowed, and worth reading twice
+#   refused   red     the model or the validator said no
+#
+# All three hues are already on this page - the note blue is the
+# Finding's, the amber is the synthetic banner's, and the red is the one
+# Streamlit paints a card that moved the wrong way - so this adds a
+# design, not a palette. Measured on every surface a notice is drawn on,
+# which includes the SIDEBAR (the back-office note is written there, and
+# the sidebar is a step off the page colour): the worst sentence reads at
+# 4.77:1 against the 4.5 AA asks, and the three are 41.9 apart at the
+# closest by delta-E. A test recomputes all of it.
+CAUTION_COLOUR = SCOPE_HUES["north"]
+REFUSED_COLOUR = (
+    RENDERED_COLOURS["red"][LIGHT_MODE],
+    RENDERED_COLOURS["red"][DARK_MODE],
 )
 
 # How much of a hue sits behind a panel or a button. Low, because the
@@ -2307,25 +2388,61 @@ def sorted_view(frame, column=None, descending=False):
 # palettes, nothing shouting.
 # ---------------------------------------------------------------------------
 
+# The three registers a notice can be in, by the class each one wears.
+# ONE TABLE, so a tone cannot exist in the stylesheet without a hue or in
+# the markup without a rule - the rules below are generated from this.
+NOTICE_TONES = {
+    "note": NOTE_COLOUR,
+    "caution": CAUTION_COLOUR,
+    "refused": REFUSED_COLOUR,
+}
+
+# Thin, which is the word Siri used for it: the edge carries the hue, it
+# does not box the sentence in. The synthetic banner's own edge is a step
+# thicker because it is the one statement that has to be seen before
+# anything else on the page.
+NOTICE_EDGE = "3px"
+SYNTHETIC_EDGE = "4px"
+
 BANNER_STYLE = """<style>
 .cm-banner {{ border-radius: 0.5rem; padding: 0.7rem 0.9rem;
               margin: 0.25rem 0 0.75rem 0; font-size: 0.9rem;
               line-height: 1.55; }}
 .cm-banner-lead {{ font-weight: 700; letter-spacing: 0.02em; }}
+/* A link or a command inside a banner keeps the banner's own colour
+   rather than bringing its own: the sentence is one colour, including
+   the `python -m ...` in the one notice that names a command. */
+.cm-banner a, .cm-banner code {{ color: inherit; }}
+.cm-banner code {{ font-size: 0.95em; }}
 /* SYNTHETIC: a wash and an edge, not a filled warning block. Prominent,
    because it leads with its own word in the hue and carries a 4px edge;
    soft, because nothing on this page is actually wrong. */
 .cm-synthetic {{ background: {synth_fill}; color: inherit;
                  border: 1px solid {synth_edge};
-                 border-left: 4px solid {synth_edge}; }}
+                 border-left: {synth_width} solid {synth_edge}; }}
 .cm-synthetic .cm-banner-lead {{ color: {synth_word}; }}
-/* THE NOTE PANEL, whose two ends are deliberately opposite: on cream the
-   hue fills the panel and the text is pale, on charcoal the hue washes
-   the panel and the text is bright. */
-.cm-note {{ background: {note_fill}; color: {note_text};
-            border-left: 3px solid {note_edge}; }}
-.cm-note a {{ color: inherit; }}
+/* THE NOTICES: one design, three hues. A wash of the hue over whatever
+   page is showing, the sentence written in the hue that reads on that
+   page, and a thin left edge - the Finding banner, which is the note
+   tone, and now every other notice this page writes as well. */
+{notices}
 </style>"""
+
+
+def notice_rules():
+    """One CSS rule per notice tone, built from the recorded pairs.
+
+    A pair everywhere, never a pick: the wash and the text both go out as
+    light-dark(), so a reader who switches palette - which does not rerun
+    this script - gets the other end without anybody choosing it.
+    """
+    return "\n".join(
+        f".cm-{tone} {{ background: "
+        f"{live_wash(pair, PANEL_ALPHA, PANEL_DARK_ALPHA)};"
+        f" color: {live_colour(pair)};"
+        f" border-left: {NOTICE_EDGE} solid {live_colour(pair)}; }}"
+        for tone, pair in NOTICE_TONES.items()
+    )
 
 
 def banner_style():
@@ -2334,20 +2451,30 @@ def banner_style():
         synth_fill=live_wash(SYNTHETIC_COLOUR, PANEL_ALPHA),
         synth_edge=live_colour(SYNTHETIC_COLOUR),
         synth_word=live_colour(SYNTHETIC_COLOUR),
-        note_fill=live_wash(NOTE_COLOUR, PANEL_ALPHA, PANEL_DARK_ALPHA),
-        note_text=live_colour(NOTE_COLOUR),
-        note_edge=live_colour(NOTE_COLOUR),
+        synth_width=SYNTHETIC_EDGE,
+        notices=notice_rules(),
     )
 
 
-BANNER_TONES = {"synthetic": "cm-synthetic", "note": "cm-note"}
+BANNER_TONES = {
+    "synthetic": "cm-synthetic",
+    **{tone: f"cm-{tone}" for tone in NOTICE_TONES},
+}
 
 SYNTHETIC_LEAD = "SYNTHETIC"
+
+# `like this` -> <code>like this</code>, and nothing else. Streamlit's
+# alert blocks rendered markdown, so the one notice that names a command
+# showed it as code; a banner is our own HTML, and without this the
+# backticks would arrive on the page as two literal characters. Applied
+# AFTER escaping, so what goes inside the tag is already inert - this
+# turns on two backticks, and cannot turn on anything a notice says.
+CODE_SPAN = re.compile(r"`([^`]+)`")
 
 
 def banner_html(text, tone, lead=None):
     """One banner: a lead word in the hue, then the sentence."""
-    shown = html.escape(text)
+    shown = CODE_SPAN.sub(r"<code>\1</code>", html.escape(text))
     if lead:
         shown = (
             f'<span class="cm-banner-lead">{html.escape(lead)}</span> {shown}'
@@ -2437,7 +2564,25 @@ def chart_style():
 EXCEL_BUTTON_KEY = "cm-excel-button"
 CSV_BUTTON_KEY = "cm-csv-button"
 
+# CLEAR SPACE BETWEEN A TABLE AND ITS DOWNLOADS (Siri, 11/25, round 3:
+# "at least ~16px gap at 1440 and 1920").
+#
+# The row of buttons, not the table, carries the space: Siri asked for a
+# gap between a table and the buttons under it, and all three tables on
+# this page - the detail rows, Compare all, and a custom run's rows - are
+# followed by this one row, so one rule does all three. A margin on the
+# table instead would also push down the caption that sits between the
+# two in the Compare-all view, which is not what was asked for.
+#
+# The value is MEASURED, not guessed, and the measurement is in the
+# browser test: Streamlit's own block gap left the buttons close enough
+# under the detail table that the row read as part of it.
+DOWNLOAD_ROW_KEY = "cm-download-row"
+TABLE_GAP = "1.5rem"
+
 DOWNLOAD_STYLE = """<style>
+/* The air under a table, above its two buttons. */
+.st-key-{row_key} {{ margin-top: {table_gap}; }}
 /* The two downloads, told apart by hue rather than by Streamlit's
    primary-blue and secondary-gray. A wash and a 1px edge in the hue, and
    THE LABEL IS LEFT ALONE: text that follows the theme is text that is
@@ -2462,6 +2607,8 @@ def download_style():
     return DOWNLOAD_STYLE.format(
         excel_key=EXCEL_BUTTON_KEY,
         csv_key=CSV_BUTTON_KEY,
+        row_key=DOWNLOAD_ROW_KEY,
+        table_gap=TABLE_GAP,
         edge_width=BUTTON_EDGE,
         excel_fill=live_wash(EXCEL_COLOUR, EXCEL_FILL_ALPHA),
         excel_edge=live_colour(EXCEL_COLOUR),

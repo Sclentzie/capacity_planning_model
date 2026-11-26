@@ -280,13 +280,14 @@ def test_a_saved_run_has_no_inputs_changed_section(plan_sheet):
 # ---------------------------------------------------------------------------
 
 
-def test_the_header_row_is_the_dashboard_teal_in_white_bold(
+def test_the_header_row_is_the_dashboard_slate_in_white_bold(
     plan_sheet, comparison_sheet
 ):
-    """The page's accent, so the file and the page look like one product.
+    """The page's own slate, so the file and the page look like one product.
 
-    White on this teal is 4.84:1, past the 4.5 AA asks of body text, and
-    a header is larger and bolder than body text.
+    White on this slate is 7.36:1, well past the 4.5 AA asks of body
+    text, and a header is larger and bolder than body text. It was the
+    accent teal until 11/25, at 4.84:1.
     """
     for sheet, columns in (
         (plan_sheet, download.PLAN_COLUMNS),
@@ -303,16 +304,32 @@ def test_the_header_row_is_the_dashboard_teal_in_white_bold(
     ) >= views.AA_TEXT
 
 
-def test_the_teal_is_the_page_s_own_accent():
-    """One colour, named in one place, used in two.
+def test_the_header_slate_is_the_page_s_own_slate():
+    """One colour, named in one place, used in two (Siri, 11/25).
 
     The workbook records the hex rather than importing it, because views
     imports export and the arrow cannot point both ways. This is what
     keeps the record honest.
+
+    The slate is the back office's own hue - what the NETWORK scope is
+    written in and what the CSV button is edged with - so the header row
+    sits with the sand, the lilac and the violet in the cells under it.
+    The accent teal it replaced is the colour of every slider and focus
+    ring on the dashboard, chosen because it means nothing; a workbook
+    has no sliders, so there it meant nothing twice.
     """
-    assert f"#{export.HEADER_COLOUR}".lower() == views.ACCENT_COLOURS[
+    assert f"#{export.HEADER_COLOUR}".lower() == views.SCOPE_HUES[
+        views.NETWORK_REGION
+    ][0].lower()
+    # And no longer the accent, which is the change itself.
+    assert f"#{export.HEADER_COLOUR}".lower() != views.ACCENT_COLOURS[
         views.LIGHT_MODE
     ].lower()
+    # White bold text on it, with room to spare: this is the half of the
+    # change a reader actually sees.
+    assert views.contrast_ratio(
+        "#ffffff", f"#{export.HEADER_COLOUR}"
+    ) >= 6.0
 
 
 def test_the_tints_are_what_the_page_paints_in_light_mode():
