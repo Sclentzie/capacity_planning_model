@@ -3005,3 +3005,109 @@ def test_the_sort_control_and_the_download_note_say_it_plainly():
     # Short enough to be read at a glance, which is the point of the
     # rewrite: the sentence it replaced ran to 34 words.
     assert len(note.split()) <= 20, note
+
+
+# ---------------------------------------------------------------------------
+# The chart labels read left to right (Siri, 11/25, from the live app)
+# ---------------------------------------------------------------------------
+
+
+def test_the_cost_chart_writes_its_run_names_flat(results):
+    """Found in the live app: the run names were drawn on their side.
+
+    Vega-Lite rotates a band axis's labels the moment it decides they
+    do not fit, and it decided that here - measured in the browser,
+    both labels came out at rotate(270) AND cut short by the 180px
+    default limit, so the longest read "Site shortfall N1, ..."
+    sideways. Setting the angle turns the auto-rotation off for good.
+    """
+    spec = views.cost_chart(views.cost_split(results, "combined")).to_dict()
+    axis = spec["encoding"]["x"]["axis"]
+    assert axis["labelAngle"] == 0
+    assert views.LABEL_FLAT == 0
+
+    # Wide enough for the longest run name this model can produce, so
+    # no name is handed to a reader with its end cut off.
+    assert axis["labelLimit"] >= 200, axis["labelLimit"]
+    longest = max(
+        len(run["name"]) for run in results["scenarios"].values()
+    )
+    assert longest <= 32, f"a run name grew to {longest} characters"
+
+    # A hidden label is worse than a cramped one: on a two-bar chart an
+    # unlabelled bar is a bar nobody can identify.
+    assert axis["labelOverlap"] is False
+
+
+def test_both_legends_read_along_the_bottom(results):
+    """Stacked up the right-hand side, each entry on its own line.
+
+    Along the bottom they read as one line of text under the picture
+    they describe, in the direction the rest of the page is read.
+    """
+    gap = views.gap_chart(views.weekly_gap(results, "combined"), 52).to_dict()
+    cost = views.cost_chart(views.cost_split(results, "combined")).to_dict()
+    for spec, what in ((gap, "shortfall"), (cost, "cost")):
+        legend = spec["encoding"]["color"]["legend"]
+        assert legend["orient"] == "bottom", what
+        assert legend["direction"] == "horizontal", what
+        # The longest run name drew at 159px against Vega-Lite's 160px
+        # default: the name that fits today was one character from an
+        # ellipsis. These clear it.
+        assert legend["labelLimit"] >= 240, what
+        assert legend["titleLimit"] >= 280, what
+        # And the legend still says what it is keyed on.
+        assert legend["title"], what
+
+
+def test_moving_the_labels_left_both_charts_locked(results):
+    """The one thing that must not change while the labels do.
+
+    Axis and legend settings add no parameter to a spec, so neither
+    chart can have picked up a scale binding on the way - but that is
+    the sort of thing that is true until it isn't, and this chart was
+    locked on purpose after a leader scrolled one out of scale.
+    """
+    gap = views.gap_chart(views.weekly_gap(results, "combined"), 52)
+    cost = views.cost_chart(views.cost_split(results, "combined"))
+    for chart in (gap, cost):
+        assert views.chart_is_locked(chart)
+        assert views._scale_bindings(chart.to_dict()) == []
+
+    # And the axes are still the ones this code chose.
+    gap_scale = gap.to_dict()["encoding"]["x"]["scale"]
+    assert gap_scale["domain"] == [1, 52]
+    assert gap_scale["nice"] is False
+
+
+def test_the_chart_labels_are_readable_in_both_palettes():
+    """Siri's "both modes readable", measured rather than trusted.
+
+    Streamlit's Vega theme paints every axis and legend label #808495,
+    which on this page's cream is 3.48:1 - under AA, and under the bar
+    every other word on the page is held to. Dark was never in doubt.
+    The replacement is Streamlit's own gray darkened the smallest
+    number of steps that clears AA with a margin.
+    """
+    sheet = views.chart_style()
+    # A PAIR, like every other colour this page draws: nothing in the
+    # markup depends on which palette is showing (the 11/20 rule).
+    assert views.live_colour(views.CHART_LABEL_COLOUR) in sheet
+    assert "role-axis-label" in sheet and "role-legend-label" in sheet
+    # Vega writes fill as an attribute, so an ordinary rule beats it.
+    assert "!important" not in sheet
+
+    for mode, shade in zip(views.MODES, views.CHART_LABEL_COLOUR):
+        ratio = views.contrast_ratio(shade, views.page_colour(mode))
+        assert ratio >= views.AA_TEXT, f"{mode}: {ratio:.2f}:1"
+
+    # Still a muted label gray, not body text promoted onto the axis:
+    # the light shade stays close to the colour it replaces.
+    assert views.colour_distance(views.CHART_LABEL_COLOUR[0], "#808495") < 20
+
+
+def test_the_chart_stylesheet_reaches_the_page():
+    """The sheet is no use sitting in views if the page never sends it."""
+    app = app_test().run()
+    assert not app.exception
+    assert views.live_colour(views.CHART_LABEL_COLOUR) in page_style(app)

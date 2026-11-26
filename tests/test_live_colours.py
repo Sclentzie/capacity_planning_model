@@ -53,7 +53,7 @@ from pathlib import Path
 
 import pytest
 
-from capacity_model import views
+from capacity_model import api, views
 
 sync_playwright = pytest.importorskip(
     "playwright.sync_api",
@@ -1214,3 +1214,170 @@ def test_no_figure_on_the_page_writes_the_dollar_before_the_sign(page):
         assert "-$" in shown, f"{label}: no negative amount on the page"
     set_theme(page, "Light")
     pick(page, views.ONE_RUN_VIEW)
+
+
+# ---------------------------------------------------------------------------
+# The chart labels read left to right (Siri, 11/25, from the live app)
+# ---------------------------------------------------------------------------
+
+# Every label Vega draws on an axis or in a legend, with the angle the
+# browser actually turned it by. Read off the transform rather than the
+# spec, because the spec asking for 0 and the browser drawing 270 is
+# precisely the bug: Vega-Lite rotates a band axis's labels itself the
+# moment it decides they do not fit.
+CHART_LABELS = r"""
+  () => {
+    const out = [];
+    document.querySelectorAll('svg.marks').forEach((svg, chart) => {
+      const frame = svg.getBoundingClientRect();
+      svg.querySelectorAll(
+        'g[class*="role-axis-label"] text, g[class*="role-legend-label"] text'
+      ).forEach(node => {
+        const spin = /rotate\(\s*([-0-9.]+)/.exec(
+          node.getAttribute('transform') || '');
+        const box = node.getBoundingClientRect();
+        out.push({
+          chart: chart,
+          kind: node.closest('g[class*="role-legend-label"]')
+                ? 'legend' : 'axis',
+          text: node.textContent,
+          angle: spin ? parseFloat(spin[1]) : 0,
+          left: Math.round(box.left), top: Math.round(box.top),
+          width: Math.round(box.width), height: Math.round(box.height),
+          fill: getComputedStyle(node).fill,
+          bottom: Math.round(frame.bottom),
+        });
+      });
+    });
+    return out;
+  }
+"""
+
+
+def longest_run_name():
+    """The hardest case this model can put on an axis."""
+    return max(
+        (run["name"] for run in api.load_results()["scenarios"].values()),
+        key=len,
+    )
+
+
+def chart_labels(tab):
+    tab.wait_for_selector("svg.marks", timeout=30000)
+    tab.wait_for_timeout(1500)
+    found = tab.evaluate(CHART_LABELS)
+    assert found, "no chart labels on the page at all"
+    return found
+
+
+@pytest.mark.parametrize("width", (1440, 1920))
+def test_every_chart_label_reads_left_to_right(page, width):
+    """THE LABELS UNDER THE CHARTS WERE VERTICAL (Siri, 11/25).
+
+    Measured before the fix, on the longest run name there is: both
+    cost-chart labels were drawn at rotate(270), and the longer of them
+    was cut to "Site shortfall N1, ..." as well - a name turned on its
+    side that was not even the whole name.
+
+    This drives the real app at both widths, picks the longest run
+    name, and reads the angle off every label Vega drew. Zero, all of
+    them, or the names are sideways again.
+    """
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.wait_for_timeout(600)
+    set_theme(page, "Light")
+    pick(page, views.ONE_RUN_VIEW)
+    name = longest_run_name()
+    assert pick_run(page, name), f"could not pick {name!r}"
+    page.wait_for_timeout(3000)
+
+    labels = chart_labels(page)
+    turned = [
+        f"{row['kind']} {row['text']!r} at {row['angle']} degrees"
+        for row in labels if abs(row["angle"]) > 0.01
+    ]
+    assert not turned, "\n".join(turned)
+
+    # Both charts really were on the page, or nothing above was tested.
+    assert len({row["chart"] for row in labels}) == 2, labels
+
+    # The longest name is written in FULL, on the axis and in the
+    # legend: Vega-Lite's default limit had been cutting it with an
+    # ellipsis, which is a shortening nobody chose.
+    for kind in ("axis", "legend"):
+        written = [row["text"] for row in labels if row["kind"] == kind]
+        assert name in written, f"{kind} labels at {width}: {written}"
+    assert not [row for row in labels if "…" in row["text"]], (
+        "a label was given an ellipsis"
+    )
+
+
+@pytest.mark.parametrize("width", (1440, 1920))
+def test_each_legend_reads_as_one_line_under_its_chart(page, width):
+    """Stacked up the right-hand side, one entry per line (Siri, 11/25).
+
+    Horizontal is measured as the browser laid it out: the entries of a
+    legend share a line and sit side by side. Reading the orientation
+    off the spec would only say what was asked for.
+    """
+    page.set_viewport_size({"width": width, "height": 1200})
+    page.wait_for_timeout(600)
+    pick(page, views.ONE_RUN_VIEW)
+    assert pick_run(page, longest_run_name())
+    page.wait_for_timeout(3000)
+
+    labels = chart_labels(page)
+    for chart in sorted({row["chart"] for row in labels}):
+        entries = [
+            row for row in labels
+            if row["chart"] == chart and row["kind"] == "legend"
+        ]
+        assert len(entries) >= 2, f"chart {chart}: {entries}"
+        entries.sort(key=lambda row: row["left"])
+
+        # Side by side: one row of text, not a column of it.
+        tops = {row["top"] for row in entries}
+        assert max(tops) - min(tops) <= 2, (
+            f"chart {chart}: the legend stacks - tops {sorted(tops)}"
+        )
+        lefts = [row["left"] for row in entries]
+        assert lefts == sorted(set(lefts)), f"chart {chart}: {lefts}"
+
+        # And under the picture rather than beside it: every legend
+        # entry sits below every axis label of the same chart.
+        axis_rows = [
+            row for row in labels
+            if row["chart"] == chart and row["kind"] == "axis"
+        ]
+        lowest_axis = max(row["top"] for row in axis_rows)
+        assert min(row["top"] for row in entries) > lowest_axis, (
+            f"chart {chart}: the legend is not below the chart"
+        )
+
+
+@pytest.mark.parametrize("mode,label", [
+    (views.LIGHT_MODE, "Light"), (views.DARK_MODE, "Dark"),
+])
+def test_every_chart_label_is_readable_on_the_page_it_sits_on(page, mode, label):
+    """Siri's "both modes readable", measured as painted (11/25).
+
+    Moving the legend under the picture put it where a light-mode
+    reader looks, which is what turned this up: Streamlit's Vega theme
+    paints its labels a gray that measures 3.48:1 on this page's cream,
+    under AA and under the bar every other word here is held to.
+    """
+    set_theme(page, label)
+    pick(page, views.ONE_RUN_VIEW)
+    page.wait_for_timeout(2000)
+
+    paper = background(page)
+    assert paper == views.page_colour(mode)
+    faint = []
+    for row in chart_labels(page):
+        ratio = views.contrast_ratio(as_hex(row["fill"]), paper)
+        if ratio < views.AA_TEXT:
+            faint.append(
+                f"{row['kind']} {row['text']!r} is {ratio:.2f}:1 on {paper}"
+            )
+    assert not faint, "\n".join(sorted(set(faint))[:6])
+    set_theme(page, "Light")

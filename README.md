@@ -365,6 +365,30 @@ zoomed, because a chart scrolled out of scale by a stray trackpad gesture
 cannot be put back without reloading the page. Hovering still reads a value
 off a line.
 
+Every label on both charts reads left to right. Vega-Lite rotates a bar
+chart's category labels to vertical as soon as it decides they do not fit,
+and it had: measured in the browser, the two run names under the cost chart
+were drawn on their side *and* cut short by the 180px default label limit, so
+the longer one read "Site shortfall N1, …" sideways. The angle is set
+explicitly now, which turns that off for good. There is nothing to abbreviate
+either — the chart only ever draws two bars, the baseline and the run being
+looked at, so a band is about 440px wide at 1440 and the longest run name is
+136px. The full name fits flat with three times the room it needs, and the
+bar's tooltip carries it as well. Both legends read along the bottom rather
+than stacked up the right-hand side, one line of text under the picture they
+describe.
+
+Moving the legend under the picture put it where a light-mode reader looks,
+which turned up a colour nobody here had chosen: Streamlit's chart theme
+paints axis and legend labels `#808495`, and on this page's cream that is
+3.48:1, under the 4.5 AA asks and under the bar every other word on the page
+is held to. Dark was never in doubt at 14.30:1. The light end is now
+Streamlit's own gray at its own hue and saturation, darkened the smallest
+number of steps that clears AA with a margin — 4.88:1, and ΔE 9.5 from the
+colour it replaces, so it still reads as a muted label rather than as body
+text promoted onto the axis. It goes out as a `light-dark()` pair like every
+other colour this page draws.
+
 The detail table's headers are shortened to fit the page without scrolling
 sideways — hover one for the workbook's own name for that column and what it
 means. The CSV download is not shortened: it keeps the full headers and the
@@ -403,7 +427,7 @@ A test re-runs the whole model and compares every cell of that file, so it
 cannot go stale without the suite saying so.
 
 ```powershell
-# The validation checks: 885 tests, about 82 minutes
+# The validation checks: 890 tests, about 82 minutes
 .venv\Scripts\python -m pytest
 ```
 
@@ -443,11 +467,11 @@ half-hour inside somebody's existing paid week costs the same as not freeing it.
 
 ## How it is checked
 
-885 tests across 25 files: 884 passing, and 1 that fails on purpose and is
+890 tests across 25 files: 889 passing, and 1 that fails on purpose and is
 described under the palette above. Every validation check in the
 specification is a test, and a session's work is not finished until they pass.
 
-A 26th file, `tests/test_live_colours.py`, holds 33 more that drive a real
+A 26th file, `tests/test_live_colours.py`, holds 39 more that drive a real
 browser: they switch the theme through Streamlit's own menu with no refresh and
 read back the colours actually painted; they check every card on every run
 against what the model says that measure did, card by card, rather than asking
@@ -458,7 +482,10 @@ coloured word, both download buttons and both banners in each palette and
 across a switch, and they measure the scroll position after a run is picked —
 three of the fixes that day were only visible in a browser, including a
 stylesheet that silently never arrived and a scroll that ran once per session
-and then stopped. They need playwright, which is
+and then stopped. Since 25 November they also read the angle off every axis
+and legend label at both widths, which is the only place the rotation Siri
+found could be seen: the spec asked for nothing and Vega-Lite rotated the
+labels anyway. They need playwright, which is
 deliberately not in `requirements.txt`, so they skip themselves when it is
 absent — the file says how to run them. They exist because every other test
 here asks Python what colour something is, and the bug they were written for

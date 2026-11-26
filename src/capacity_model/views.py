@@ -1382,6 +1382,62 @@ def nice_ceiling(value):
     return float(10 * power)
 
 
+# LABELS READ LEFT TO RIGHT (Siri, 11/25, from the live app).
+#
+# Vega-Lite rotates a band axis's labels to vertical the moment it
+# decides they do not fit, and it decided that here. Measured in the
+# browser before this change, both run labels were drawn at
+# rotate(270) AND cut short by the 180px default label limit: the
+# longest read "Site shortfall N1, ..." sideways. A reader got a name
+# turned on its side that was not even the whole name.
+#
+# Setting the angle explicitly turns the auto-rotation off for good.
+# The room was always there: this chart draws only ever TWO bars - the
+# baseline and the run being looked at - so one band measured 437px
+# wide at 1440 and 677px at 1920, against a longest run name that
+# draws 136px on the axis. Nothing has to be wrapped or shortened.
+# The full name fits flat with three times the room it needs, which is
+# why there is no abbreviation here to explain.
+LABEL_FLAT = 0
+
+# Wide enough that the longest run name is never given an ellipsis,
+# and still a limit rather than none at all. On a window narrow enough
+# to squeeze two of these, Vega-Lite shortens the name with "..."
+# instead of letting two labels collide, and the bar's own tooltip
+# carries the name in full either way - so the reader loses nothing a
+# hover cannot give back.
+RUN_LABEL_LIMIT = 200
+
+# A label Vega-Lite has decided to hide is worse than a cramped one:
+# an unlabelled bar on a two-bar chart is a bar nobody can identify.
+# So overlapping labels are shortened, never dropped.
+LABEL_OVERLAP = False
+
+# The legend reads ALONG THE BOTTOM, not stacked up the right-hand
+# side (Siri, 11/25). Stacked, each entry sat on its own line and the
+# run names ran out to the right of the plot; along the bottom they
+# read as one line of text under the picture they describe, in the
+# direction everything else on the page is read.
+#
+# The limits are measured, not guessed: in the legend's own font the
+# longest run name drew at 159px against Vega-Lite's 160px default, so
+# the name that fits today was one character from an ellipsis. These
+# clear it.
+LEGEND_LABEL_LIMIT = 240
+LEGEND_TITLE_LIMIT = 280
+
+
+def _flat_legend(title):
+    """A legend that reads along the bottom, left to right."""
+    return alt.Legend(
+        title=title,
+        orient="bottom",
+        direction="horizontal",
+        labelLimit=LEGEND_LABEL_LIMIT,
+        titleLimit=LEGEND_TITLE_LIMIT,
+    )
+
+
 def _locked_x(field, plan_weeks):
     """The plan year, every week of it, and not draggable."""
     return alt.X(
@@ -1433,7 +1489,7 @@ def gap_chart(table, plan_weeks):
         .encode(
             x=_locked_x(PLAN_WEEK, plan_weeks),
             y=_locked_y(SHORT_FTE_HEADER, SHORT_FTE_HEADER, top),
-            color=alt.Color(f"{RUN_HEADER}:N", title=RUN_HEADER),
+            color=alt.Color(f"{RUN_HEADER}:N", legend=_flat_legend(RUN_HEADER)),
             tooltip=[
                 alt.Tooltip(f"{RUN_HEADER}:N", title=RUN_HEADER),
                 alt.Tooltip(f"{PLAN_WEEK}:Q", title=PLAN_WEEK, format="d"),
@@ -1460,9 +1516,22 @@ def cost_chart(table):
         alt.Chart(long)
         .mark_bar()
         .encode(
-            x=alt.X(f"{RUN_HEADER}:N", title=None, sort=list(table.index)),
+            # Flat, and long enough to say the whole name: this is the
+            # axis Siri found rotated to vertical in the live app.
+            x=alt.X(
+                f"{RUN_HEADER}:N",
+                title=None,
+                sort=list(table.index),
+                axis=alt.Axis(
+                    labelAngle=LABEL_FLAT,
+                    labelLimit=RUN_LABEL_LIMIT,
+                    labelOverlap=LABEL_OVERLAP,
+                ),
+            ),
             y=_locked_y(COST_HEADER, COST_HEADER, top),
-            color=alt.Color(f"{COST_HALF_HEADER}:N", title=COST_HALF_HEADER),
+            color=alt.Color(
+                f"{COST_HALF_HEADER}:N", legend=_flat_legend(COST_HALF_HEADER)
+            ),
             tooltip=[
                 alt.Tooltip(f"{RUN_HEADER}:N", title=RUN_HEADER),
                 alt.Tooltip(f"{COST_HALF_HEADER}:N", title=COST_HALF_HEADER),
@@ -2326,6 +2395,43 @@ COLLAPSE_STYLE = """<style>
 def collapse_style():
     """The rule that hides the two containers nothing is drawn in."""
     return COLLAPSE_STYLE.format(style_key=STYLE_KEY, scroll_key=SCROLL_KEY)
+
+
+# THE CHART LABELS, READABLE IN BOTH PALETTES (Siri, 11/25: "both
+# modes readable").
+#
+# Moving the legend under the picture put it where a light-mode reader
+# looks, which is what turned up the problem: measured in the browser,
+# Streamlit's Vega theme paints every axis and legend label #808495,
+# and on this page's cream that is 3.48:1 - under the 4.5 AA asks and
+# under the bar every other word on this page is held to. Dark was
+# never in doubt at 14.30:1.
+#
+# NOT a redesign of the charts. The light shade is Streamlit's own
+# gray at its own hue and saturation, darkened the smallest number of
+# steps that clears AA with a margin: 4.88:1, and dE 9.5 from the
+# colour it replaces, so it still reads as the muted label gray rather
+# than as body text promoted onto the axis. The dark end is left
+# exactly as Streamlit paints it, because it was already fine.
+#
+# Vega writes fill as a presentation ATTRIBUTE, not an inline style, so
+# an ordinary rule beats it and no !important is needed - checked in
+# the browser rather than assumed.
+CHART_LABEL_COLOUR = ("#686c7d", "#e6eaf1")   # 4.88:1 / 14.30:1
+
+CHART_STYLE = """<style>
+/* Axis and legend labels only. The marks, the gridlines and the title
+   are Streamlit's, and stay Streamlit's - a pair here, like every
+   other colour this page draws, so the browser picks the shade on
+   every repaint and nothing depends on which palette is showing. */
+.stVegaLiteChart g[class*="role-axis-label"] text,
+.stVegaLiteChart g[class*="role-legend-label"] text {{ fill: {label}; }}
+</style>"""
+
+
+def chart_style():
+    """Axis and legend labels, as a pair for the browser to choose."""
+    return CHART_STYLE.format(label=live_colour(CHART_LABEL_COLOUR))
 
 
 EXCEL_BUTTON_KEY = "cm-excel-button"

@@ -130,7 +130,7 @@ def page_styles():
     """
     sheets = (
         views.collapse_style(), views.table_style(), views.banner_style(),
-        views.download_style(),
+        views.download_style(), views.chart_style(),
     )
     # st.html AND NOT st.markdown, which is not a style preference (11/24).
     # st.markdown runs its argument through markdown first, and a markdown
