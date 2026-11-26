@@ -3,6 +3,12 @@
 A 52-week workforce capacity-planning model for **Northbrook Records Services**,
 a **fictional** six-site medical-records request operation. Written in Python.
 
+**Live dashboard (synthetic data):** <https://capacityplanningmodel-sclent.streamlit.app/>
+
+It runs the same model as this repository — the 21 saved runs it reads are the
+ones committed in `app/data/`, and the build-your-own panel runs the model
+itself — so every figure on screen is one the checks here cover.
+
 Siri L. (GitHub: Sclentzie) is the architect: she designed the model and made
 the modelling decisions recorded in the specification, which she drafted with
 Claude as a planning partner, and reviewed every checkpoint.
