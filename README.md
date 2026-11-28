@@ -356,13 +356,30 @@ deliberately, since they are never on screen together.
 One pair is still open: the no-change blue against the teal accent in dark
 mode, 32.8, recorded as a deliberately failing test rather than written off.
 A colour is a thing done to the screen; the CSV is the same bytes it always
-was. **The workbook wears the same palette** as of 11/23: its header rows are
-in white bold on the page's own **dark slate** (`#44586B`) at 7.4:1 — the back
-office's hue, so the header row sits with the sand, the lilac and the violet in
-the cells under it. It was the navy nothing on the page used, then the accent
-teal at 4.8:1, which is the colour of every slider and focus ring on the
-dashboard and was chosen in the first place because it means nothing: a
-spreadsheet has no sliders, so there it meant nothing twice; a row's Scope cell carries its
+was. **The workbook wears the same palette** as of 11/23. Its header rows are
+**pale sky blue** (`#DCEAF7`) with bold **deep slate-blue** text (`#1F3A5F`) at
+9.4:1 — past AA at 4.5 and past AAA at 7.0 — and a thin line in that same blue
+under the row. That is light-on-light, the fourth header this file has worn:
+the navy nothing on the page used, then the accent teal at 4.8:1, then the
+page's own dark slate at 7.4:1, now this. The accent was the colour of every
+slider and focus ring on the dashboard, chosen in the first place because it
+means nothing — a spreadsheet has no sliders, so there it meant nothing twice.
+The dark slate read better, but it was the hue for a SCOPE, and a header row is
+not a scope: it painted the one row that labels every column in the colour that
+elsewhere says "back office", so a NETWORK cell and the header above it said
+the same thing in the same colour while meaning different things. **What the
+sky blue matches instead is the page's note banner.** The banner's 12% blue
+wash composites to `#E0E3EB` on the cream page, and the header fill sits ΔE 4.8
+from it — close enough that the two read as one idea, measured rather than
+eyeballed. The ink is deliberately not the banner's: ΔE 40.2 darker, because
+Excel has no translucency and a header row carries more weight than a sentence.
+The reason for going pale at all is that a dark band across the top of a sheet
+reads as a heading, a thing you look AT, when a header row is a thing you look
+ALONG — so the wash labels the columns without outshouting the grid, and the
+thin border does the separating the dark band was doing by weight. It is the
+same move the page made for its notices on 11/25: wash the hue and write in it,
+rather than fill with it and knock the text out in white. Below the header, a
+row's Scope cell carries its
 region, and a run's name on Capacity Scenarios carries its kind, in the same
 six colours — mixed down onto the cream page, because Excel has no transparency
 and a spreadsheet is a light-mode document. A test composites each of the
@@ -439,8 +456,8 @@ offers a table to take away, **Download Excel (formatted)** sits first and
 **Download CSV (raw data)** beside it. The Excel file is exactly what is on
 screen — the same rows, in the same order, under the same headers, for the run
 and the filters showing — wearing the workbook's own styling, because it is
-written by the exporter rather than by a second set of rules: Arial, the slate
-header row, the same number formats, negatives in parentheses, a frozen header
+written by the exporter rather than by a second set of rules: Arial, the pale
+sky-blue header row, the same number formats, negatives in parentheses, a frozen header
 with a filter on it, and the hours gap and the totals still live Excel
 formulas. It says above the table which run it is and what was filtered out, so
 somebody opening it cold cannot sum a filtered column believing it is the

@@ -172,7 +172,8 @@ PER_DOLLAR = "0.000;(0.000)"
 
 TITLE_FONT = Font(name=FONT, size=14, bold=True)
 NOTE_FONT = Font(name=FONT, size=9, italic=True, color="555555")
-HEADER_FONT = Font(name=FONT, size=10, bold=True, color="FFFFFF")
+# HEADER_FONT is defined with the header fill and border below,
+# because all three are one decision and it needs their colour.
 SECTION_FONT = Font(name=FONT, size=11, bold=True)
 BODY_FONT = Font(name=FONT, size=10)
 BODY_BOLD = Font(name=FONT, size=10, bold=True)
@@ -207,21 +208,47 @@ BODY_ITALIC = Font(name=FONT, size=10, italic=True)
 # paints.
 # ---------------------------------------------------------------------------
 
-# DARK SLATE, with white bold text at 7.36:1 (Siri, 11/25, round 3).
+# PALE SKY BLUE, with bold deep slate-blue text at 9.38:1 (Siri,
+# 11/27). The header row goes from dark-on-light to light-on-light.
 #
-# It is the page's own slate hue - views.SCOPE_HUES["network"] at its
-# light end, the colour the back office is written in and the CSV button
-# is edged with - so the header row of every sheet sits with the sand,
-# the lilac and the violet in the cells below it rather than beside them.
-# The teal #3A7A8C it replaces is the dashboard's ACCENT: the colour of
-# every slider, button and focus ring, chosen in the first place because
-# it means nothing. A spreadsheet has no sliders, so in the workbook the
-# accent meant nothing twice.
+# A spreadsheet is read as a grid, and a dark band across the top of
+# every sheet competes with the grid for the eye - it reads as a
+# heading, which is a thing you look AT, when a header row is a thing
+# you look ALONG. A pale wash with the ink darker than the body text
+# keeps the row legible as a label without making it the loudest thing
+# on the tab, and the thin bottom border does the separating that the
+# dark band was doing with its weight.
 #
-# A test holds this to the record in views rather than to the string
-# here, and white on it goes from 4.84:1 to 7.36:1 on the way past.
-HEADER_COLOUR = "44586B"
+# This is the same move the page made on 11/25 for its notices: wash
+# the hue and write in it, rather than fill with it and knock the text
+# out in white. The workbook now does on the grid what the page does
+# in a banner.
+#
+# It gives up the tie to the page's SCOPE slate - this fill is not
+# views.SCOPE_HUES["network"] any more - and that is the point: the
+# slate is a hue for a scope, and a header row is not a scope. Painting
+# it slate meant a NETWORK cell and the header above it said the same
+# thing in the same colour while meaning different things.
+#
+# What it matches instead is the page's NOTE BANNER. That banner washes
+# views.NOTE_COLOUR at PANEL_ALPHA over the cream page, which comes out
+# as #E0E3EB, and this fill sits dE 4.8 from it - near enough that the
+# file and the page read as one idea. A test measures that distance
+# rather than trusting the eye. The ink is deliberately not the
+# banner's blue but dE 40.2 darker, because a banner's text sits on a
+# page and a header's sits on a grid, which needs more weight.
+HEADER_COLOUR = "DCEAF7"
 HEADER_FILL = PatternFill("solid", fgColor=HEADER_COLOUR)
+
+# The ink, and the border under it. Both are the one deeper blue: Siri
+# named a hex for the text and asked for the border to be "a thin
+# deeper-blue", and the only deeper blue in the row is the text's own,
+# so the row is drawn in exactly two colours instead of three.
+HEADER_TEXT_COLOUR = "1F3A5F"
+HEADER_BORDER = Border(bottom=Side(style="thin", color=HEADER_TEXT_COLOUR))
+HEADER_FONT = Font(
+    name=FONT, size=10, bold=True, color=HEADER_TEXT_COLOUR
+)
 
 # Which region a row's scope sits in: the two clusters and the back
 # office. The slate for NETWORK has no hue to speak of, which says "not a
@@ -662,6 +689,7 @@ def write_capacity_scenarios(sheet, comparison, assumptions):
             alignment=HEADER_ALIGN,
         )
         cell.fill = HEADER_FILL
+        cell.border = HEADER_BORDER
         sheet.column_dimensions[letter].width = max(width, header_floor(header))
     sheet.row_dimensions[SCENARIO_HEADER_ROW].height = 42
 
@@ -932,6 +960,7 @@ def write_summary(sheet, rows, assumptions):
         letter = get_column_letter(index)
         cell = _put(sheet, f"{letter}{row}", header, HEADER_FONT, alignment=HEADER_ALIGN)
         cell.fill = HEADER_FILL
+        cell.border = HEADER_BORDER
         sheet.column_dimensions[letter].width = width
     sheet.row_dimensions[header_row].height = 30
     row += 1
@@ -1743,6 +1772,7 @@ def write_detail_tab(sheet, name, columns, table, notes, formula=None,
             alignment=HEADER_ALIGN,
         )
         cell.fill = HEADER_FILL
+        cell.border = HEADER_BORDER
         # WIDEN ONLY. A tab with two blocks shares its columns between
         # them, and letting the lower block win would narrow a column the
         # block above it needs - which is how a money column ends up

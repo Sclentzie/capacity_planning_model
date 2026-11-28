@@ -280,14 +280,16 @@ def test_a_saved_run_has_no_inputs_changed_section(plan_sheet):
 # ---------------------------------------------------------------------------
 
 
-def test_the_header_row_is_the_dashboard_slate_in_white_bold(
+def test_the_header_row_is_pale_sky_blue_in_bold_deep_slate_blue(
     plan_sheet, comparison_sheet
 ):
-    """The page's own slate, so the file and the page look like one product.
+    """Light-on-light, with the ink darker than the body text (11/27).
 
-    White on this slate is 7.36:1, well past the 4.5 AA asks of body
-    text, and a header is larger and bolder than body text. It was the
-    accent teal until 11/25, at 4.84:1.
+    Deep slate-blue on pale sky blue is 9.38:1 - past AA at 4.5 and
+    past AAA at 7.0 - where the white-on-dark-slate it replaces was
+    7.36:1 and the accent teal before that 4.84:1. Each change has
+    read better than the last; this one also stops the header row
+    competing with the grid it labels.
     """
     for sheet, columns in (
         (plan_sheet, download.PLAN_COLUMNS),
@@ -296,40 +298,133 @@ def test_the_header_row_is_the_dashboard_slate_in_white_bold(
         cell = sheet[f"A{header_row(sheet, columns)}"]
         assert cell.fill.fgColor.rgb.endswith(export.HEADER_COLOUR), sheet.title
         assert cell.font.bold
-        assert cell.font.color.rgb.endswith("FFFFFF")
+        assert cell.font.color.rgb.endswith(export.HEADER_TEXT_COLOUR)
         assert cell.font.name == export.FONT
+        # No white left anywhere in the row: knocking the text out was
+        # the old design, and half a change is worse than none.
+        assert not cell.font.color.rgb.endswith("FFFFFF")
 
     assert views.contrast_ratio(
-        "#ffffff", f"#{export.HEADER_COLOUR}"
+        f"#{export.HEADER_TEXT_COLOUR}", f"#{export.HEADER_COLOUR}"
     ) >= views.AA_TEXT
 
 
-def test_the_header_slate_is_the_page_s_own_slate():
-    """One colour, named in one place, used in two (Siri, 11/25).
+def test_every_download_s_header_row_is_underlined(
+    plan_sheet, comparison_sheet
+):
+    """The border does the separating the dark band did by weight.
 
-    The workbook records the hex rather than importing it, because views
-    imports export and the arrow cannot point both ways. This is what
-    keeps the record honest.
-
-    The slate is the back office's own hue - what the NETWORK scope is
-    written in and what the CSV button is edged with - so the header row
-    sits with the sand, the lilac and the violet in the cells under it.
-    The accent teal it replaced is the colour of every slider and focus
-    ring on the dashboard, chosen because it means nothing; a workbook
-    has no sliders, so there it meant nothing twice.
+    A pale header needs a line under it or the first data row reads as
+    part of it. Thin, and in the same deeper blue as the text, so the
+    row is drawn in two colours rather than three.
     """
-    assert f"#{export.HEADER_COLOUR}".lower() == views.SCOPE_HUES[
-        views.NETWORK_REGION
-    ][0].lower()
-    # And no longer the accent, which is the change itself.
+    for sheet, columns in (
+        (plan_sheet, download.PLAN_COLUMNS),
+        (comparison_sheet, (("Scenario",),)),
+    ):
+        cell = sheet[f"A{header_row(sheet, columns)}"]
+        assert cell.border.bottom is not None, sheet.title
+        assert cell.border.bottom.style == "thin", sheet.title
+        assert str(cell.border.bottom.color.rgb).endswith(
+            export.HEADER_TEXT_COLOUR
+        ), (sheet.title, cell.border.bottom.color.rgb)
+
+
+def note_banner_wash():
+    """What the page's note banner actually comes out as on the cream.
+
+    The banner is a translucent wash in the browser, so the colour a
+    reader sees is not views.NOTE_COLOUR but that blue mixed down onto
+    the page. Excel has no transparency, so this is the number the
+    workbook has to match if the two are to look like one product.
+    """
+    blue = views.NOTE_COLOUR[0]          # the light end of the pair
+    red, green, each_blue = (int(blue[at:at + 2], 16) for at in (1, 3, 5))
+    return views.composite_over(
+        f"rgba({red}, {green}, {each_blue}, {views.PANEL_ALPHA})",
+        views.PAGE_COLOURS[views.LIGHT_MODE],
+    )
+
+
+# How close two colours have to be to read as the same idea. The project
+# uses views.DISTINCT (40) for "tell these apart" and views.DIFFERENT
+# (20) for "these are not the same hue", so a fifth of the DISTINCT bar
+# is a tight match, not a loose one.
+ECHO_DISTANCE = 8.0
+
+
+def test_the_header_fill_echoes_the_page_s_note_banner():
+    """The file matches the page - just not the part it used to (11/27).
+
+    From 11/25 the header fill WAS views.SCOPE_HUES["network"], which
+    tied it to the page but tied it to the wrong thing: the slate is a
+    hue for a SCOPE, and a header row is not a scope. It painted the one
+    row that labels every column in the colour that elsewhere means "the
+    back office", so a NETWORK cell and the header above it said the
+    same thing in the same colour while meaning different things.
+
+    The sky blue matches the note banner instead, which is a label for
+    the reader rather than a name for a place - the same job a header
+    row does. Measured, because "it looks like the banner" is how two
+    products start drifting apart.
+    """
+    distance = views.colour_distance(
+        note_banner_wash(), f"#{export.HEADER_COLOUR}"
+    )
+    assert distance <= ECHO_DISTANCE, (
+        note_banner_wash(), export.HEADER_COLOUR, distance,
+    )
+    # Not the scope slate any more, which is the change itself.
+    page_slate = views.SCOPE_HUES[views.NETWORK_REGION][0].lower()
+    assert f"#{export.HEADER_COLOUR}".lower() != page_slate
+    # And still not the accent teal, the thing every slider is.
     assert f"#{export.HEADER_COLOUR}".lower() != views.ACCENT_COLOURS[
         views.LIGHT_MODE
     ].lower()
-    # White bold text on it, with room to spare: this is the half of the
-    # change a reader actually sees.
+    # The pair a reader sees, with room to spare: past AAA, not merely AA.
     assert views.contrast_ratio(
-        "#ffffff", f"#{export.HEADER_COLOUR}"
-    ) >= 6.0
+        f"#{export.HEADER_TEXT_COLOUR}", f"#{export.HEADER_COLOUR}"
+    ) >= 7.0
+
+
+def test_the_header_ink_is_deeper_than_the_banner_s_blue():
+    """The fill echoes the page; the ink deliberately does not.
+
+    A banner's sentence sits on a page, where the full-strength note
+    blue is enough. A header's words sit on a grid of numbers and have
+    to hold their own against every rule and figure around them, so the
+    ink goes deeper rather than matching the banner's blue too.
+    """
+    banner_ink = views.NOTE_COLOUR[0]    # the light end of the pair
+    header_ink = f"#{export.HEADER_TEXT_COLOUR}"
+    assert views.colour_distance(banner_ink, header_ink) > views.DIFFERENT
+    # Deeper, not merely different: a lower luminance than the banner's.
+    assert views.relative_luminance(
+        header_ink
+    ) < views.relative_luminance(banner_ink)
+
+
+def test_the_header_ink_is_darker_than_the_body_text_is_light():
+    """A pale fill only works if the ink on it is the darkest thing.
+
+    The workbook's body text is black, so the header ink must be dark
+    enough to read as emphasis next to it rather than as a washed-out
+    version of it. Measured against the fill, not against the black.
+    """
+    on_fill = views.contrast_ratio(
+        f"#{export.HEADER_TEXT_COLOUR}", f"#{export.HEADER_COLOUR}"
+    )
+    black_on_fill = views.contrast_ratio("#000000", f"#{export.HEADER_COLOUR}")
+    # The ink is lighter than black - it is a blue, not a near-black -
+    # but still clears AA by a wide margin on its own fill.
+    assert on_fill < black_on_fill
+    assert on_fill >= views.AA_TEXT
+    # And the fill is genuinely pale: a header cell is lighter than
+    # every tint the body of the workbook uses.
+    for tint in export.SCOPE_TINT_COLOURS.values():
+        assert views.relative_luminance(
+            f"#{export.HEADER_COLOUR}"
+        ) > views.relative_luminance(f"#{tint}"), tint
 
 
 def test_the_tints_are_what_the_page_paints_in_light_mode():

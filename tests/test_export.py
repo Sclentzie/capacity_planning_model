@@ -670,18 +670,24 @@ def test_money_hours_and_days_each_have_their_own_format(book):
 # Two products was what it looked like before: a navy-headed spreadsheet
 # and a teal page. A reader who opens the file after reading the page
 # should not have to wonder whether they are looking at the same model.
+#
+# ONE EXCEPTION, since 11/27: the header row. Every tint in the body of
+# the workbook is still the page's own hue mixed down, but the header's
+# pale sky blue is the workbook's alone - because a header row is not a
+# scope, and painting it the scope slate said "back office" on the one
+# row that belongs to no site. The tests below hold that exception in
+# place so it cannot quietly spread to the tints.
 # ---------------------------------------------------------------------------
 
 
-def test_every_header_row_wears_the_dashboard_slate(book):
-    """One accent, in one place, used by both.
+def header_cells(book):
+    """Every header cell in the workbook, found by its fill.
 
-    Checked on every tab rather than on one, because a header fill is
-    exactly the kind of thing that gets set per writer and then drifts -
-    and a workbook in two colours is the first thing that makes it look
-    unowned.
+    Until 11/27 a header was found by its WHITE text, which worked
+    only while white text existed nowhere else. The ink is now a deep
+    blue, so the fill is what identifies the row - and the fill is the
+    better handle anyway, because it is the thing a reader sees first.
     """
-    seen = 0
     for name in export.BUILT_TABS:
         sheet = book[name]
         for row in sheet.iter_rows():
@@ -692,22 +698,81 @@ def test_every_header_row_wears_the_dashboard_slate(book):
                 rgb = fill.fgColor.rgb
                 if not isinstance(rgb, str) or rgb in ("00000000",):
                     continue
-                if cell.font and cell.font.color and str(
-                    cell.font.color.rgb
-                ).endswith("FFFFFF"):
-                    # A white-on-colour cell is a header, and the only
-                    # colour a header may wear is the page's slate.
-                    assert rgb.endswith(export.HEADER_COLOUR), (
-                        name, cell.coordinate, rgb,
-                    )
-                    assert cell.font.bold, (name, cell.coordinate)
-                    seen += 1
+                if rgb.endswith(export.HEADER_COLOUR):
+                    yield name, cell
+
+
+def test_every_header_row_wears_the_pale_sky_blue(book):
+    """One header design, in one place, used by every writer.
+
+    Checked on every tab rather than on one, because a header fill is
+    exactly the kind of thing that gets set per writer and then drifts -
+    and a workbook in two colours is the first thing that makes it look
+    unowned.
+    """
+    seen = 0
+    for name, cell in header_cells(book):
+        assert cell.font.bold, (name, cell.coordinate)
+        assert str(cell.font.color.rgb).endswith(
+            export.HEADER_TEXT_COLOUR
+        ), (name, cell.coordinate, cell.font.color.rgb)
+        seen += 1
     assert seen > 100, seen
-    # The page's slate, not its accent teal, since 11/25: the reasoning
-    # is in test_download.test_the_header_slate_is_the_page_s_own_slate.
-    assert f"#{export.HEADER_COLOUR}".lower() == views.SCOPE_HUES[
+
+
+def test_no_header_cell_still_knocks_its_text_out_in_white(book):
+    """The 11/25 design is gone from the file, not just from one tab.
+
+    A half-converted workbook - some tabs pale, some still dark - is
+    worse than either design on its own, and this is the assertion that
+    catches a writer nobody remembered to change.
+    """
+    for name in export.BUILT_TABS:
+        sheet = book[name]
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.font is None or cell.font.color is None:
+                    continue
+                assert not str(cell.font.color.rgb).endswith("FFFFFF"), (
+                    name, cell.coordinate,
+                )
+
+
+def test_every_header_row_has_a_thin_deeper_blue_line_under_it(book):
+    """What separates the header from the first data row (11/27).
+
+    The dark slate did this with its weight. A pale fill cannot, so the
+    border does it instead - which means a header cell without one is a
+    header that bleeds into the data.
+    """
+    seen = 0
+    for name, cell in header_cells(book):
+        bottom = cell.border.bottom
+        assert bottom is not None, (name, cell.coordinate)
+        assert bottom.style == "thin", (name, cell.coordinate, bottom.style)
+        assert str(bottom.color.rgb).endswith(export.HEADER_TEXT_COLOUR), (
+            name, cell.coordinate, bottom.color.rgb,
+        )
+        seen += 1
+    assert seen > 100, seen
+
+
+def test_the_header_fill_is_no_longer_the_page_s_slate(book):
+    """The tie to the dashboard palette, given up on purpose (11/27).
+
+    Recorded here as well as in test_download because this is the file
+    that reads the built workbook. The reasoning, and the measurement
+    of what the fill DOES match, is in test_download's
+    test_the_header_fill_echoes_the_page_s_note_banner.
+    """
+    assert f"#{export.HEADER_COLOUR}".lower() != views.SCOPE_HUES[
         views.NETWORK_REGION
     ][0].lower()
+    # And the text on it still clears AA, measured from the built file's
+    # own constants rather than from a string in the test.
+    assert views.contrast_ratio(
+        f"#{export.HEADER_TEXT_COLOUR}", f"#{export.HEADER_COLOUR}"
+    ) >= views.AA_TEXT
 
 
 def test_the_scope_cell_carries_its_region_on_every_tab_that_has_one(book):
